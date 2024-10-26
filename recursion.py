@@ -4,6 +4,7 @@ from tkinter import filedialog
 from PIL import Image, ImageTk
 from apng import APNG
 import numpy as np
+import math
 
 # Constants
 DEFAULT_FRAME_COUNT = 15
@@ -319,30 +320,36 @@ class ImageEditor:
             return
 
         # Define parameters for APNG
-        num_frames = frame_count + 2 # Number of frames in the APNG
-
+        num_frames = frame_count  # Remove the +2, we'll create exactly the number of frames specified
 
         print(f"Enlarged Image Size: {self.enlarged_image_size}")
         print(f"Original Image Size: {self.original_size}")
 
-        # Create each frame of the APNG
-        for i in range(1, num_frames - 1):  # Start from 1 and exclude the last frame
-            # Calculate the scale factor for the current frame
-            current_scale = 1.0 - ((i - 1) / (num_frames - 2)) * (1.0 - scale)
-            print(f"Frame {i} - Current Scale: {current_scale}")
+        # Calculate the total scale change
+        start_scale = 1.0
+        end_scale = self.enlarged_image_size[0] / self.original_size[0]
 
-            # Calculate the size of the frame image
-            frame_size = (int(self.enlarged_image_size[0] * current_scale), int(self.enlarged_image_size[1] * current_scale))
+        # Create each frame of the APNG
+        for i in range(num_frames):
+            # Calculate the exponential scale factor
+            t = i / num_frames  # Changed from (num_frames - 1) to num_frames
+            current_scale = start_scale * math.exp(t * math.log(end_scale / start_scale))
+
+            # Calculate the frame size
+            frame_size = (
+                int(self.original_size[0] * current_scale),
+                int(self.original_size[1] * current_scale)
+            )
             print(f"Frame {i} - Frame Size: {frame_size}")
 
             # Check if the frame size is valid (non-zero, within enlarged image bounds)
-            if frame_size[0] <= 0 or frame_size[1] <= 0:
+            if frame_size[0] <= 0 or frame_size[1] <= 0 or frame_size[0] > self.enlarged_image_size[0] or frame_size[1] > self.enlarged_image_size[1]:
                 print(f"Frame {i} - Invalid frame size: {frame_size}. Skipping frame.")
                 continue
 
             # Calculate origin for cropping
-            crop_x = int((self.enlarged_image_size[0] - frame_size[0]) * origin_x)
-            crop_y = int((self.enlarged_image_size[1] - frame_size[1]) * origin_y)
+            crop_x = int((self.enlarged_image_size[0] - frame_size[0]) * self.origin_x)
+            crop_y = int((self.enlarged_image_size[1] - frame_size[1]) * self.origin_y)
             print(f"Frame {i} - Crop Coordinates: ({crop_x}, {crop_y})")
 
             # Check if cropping coordinates are valid
@@ -468,3 +475,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ImageEditor(root)
     root.mainloop()
+
