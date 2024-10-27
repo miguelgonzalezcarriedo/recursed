@@ -31,6 +31,7 @@ class ImageEditor:
         self.image_stack_on_top = True
         self.canvas_size = (0, 0)
         self.scale_factor = 1.0
+        self.canvas_image = None  # Add this line to store the canvas image
 
         self.setup_ui()
         self.load_image()
@@ -80,15 +81,15 @@ class ImageEditor:
         # Sliders for scaling and origin positions
         self.scale_slider = tk.Scale(controls_frame, from_=MIN_SCALE, to_=MAX_SCALE, resolution=SCALE_RESOLUTION, orient=tk.HORIZONTAL, label="Box Scale", bg=self.root.cget('bg'), highlightthickness=0)
         self.scale_slider.pack(side=tk.LEFT, padx=5)
-        self.scale_slider.bind("<Motion>", self.update_transform)
+        self.scale_slider.bind("<Motion>", self.update_output_image)
 
         self.origin_x_slider = tk.Scale(controls_frame, from_=0, to_=1, resolution=0.01, orient=tk.HORIZONTAL, label="Origin X", bg=self.root.cget('bg'), highlightthickness=0)
         self.origin_x_slider.pack(side=tk.LEFT, padx=5)
-        self.origin_x_slider.bind("<Motion>", self.update_transform)
+        self.origin_x_slider.bind("<Motion>", self.update_output_image)
 
         self.origin_y_slider = tk.Scale(controls_frame, from_=0, to_=1, resolution=0.01, orient=tk.HORIZONTAL, label="Origin Y", bg=self.root.cget('bg'), highlightthickness=0)
         self.origin_y_slider.pack(side=tk.LEFT, padx=5)
-        self.origin_y_slider.bind("<Motion>", self.update_transform)
+        self.origin_y_slider.bind("<Motion>", self.update_output_image)
 
         # Canvas
         self.canvas = tk.Canvas(self.root, bg='white')
@@ -102,7 +103,7 @@ class ImageEditor:
                 self.image = Image.open(file_path).convert("RGBA")
                 self.original_size = self.image.size
                 self.calculate_scale_factor()
-                self.update_transform(None)
+                self.update_output_image()
         except Exception as e:
             print(f"Error loading image: {e}")
 
@@ -112,66 +113,17 @@ class ImageEditor:
             height_ratio = self.canvas_size[1] / self.original_size[1]
             self.scale_factor = min(width_ratio, height_ratio)
 
-    def update_transform(self, event):
+    def update_output_image(self, event=None):
         if not self.image:
             return
 
-        # Clear previous drawings
-        if self.canvas is not None:
-            self.canvas.delete("all")
-        self.image_references.clear()
-
-        # Get slider values
-        scale = self.scale_slider.get()
-        self.origin_x = self.origin_x_slider.get()
-        self.origin_y = self.origin_y_slider.get()
-        
-        # Calculate Original image origin coordinates
-        self.original_origin_x = self.origin_x * self.original_size[0]
-        self.original_origin_y = self.origin_y * self.original_size[1]
-        
-        current_scale = 1.0
-        iteration = 0
-
-        # Continue drawing images while their size is above a minimum threshold
-        while True:
-            # Calculate size of each image
-            canvas_width = self.original_size[0] * current_scale * self.scale_factor
-            canvas_height = self.original_size[1] * current_scale * self.scale_factor
-
-            # Ensure dimensions are positive and not too small
-            if canvas_width < 1 or canvas_height < 1:
-                break  # Stop if the images become too small
-
-            # Calculate origin position for each image
-            origin_x_pos = (self.canvas_size[0] - canvas_width) * self.origin_x
-            origin_y_pos = (self.canvas_size[1] - canvas_height) * self.origin_y
-
-            # Create scaled image
-            scaled_image = self.image.resize((int(canvas_width), int(canvas_height)), Image.Resampling.LANCZOS)
-            tk_scaled_image = ImageTk.PhotoImage(scaled_image)
-
-            # Draw the image on the canvas
-            if self.image_stack_on_top:
-                self.canvas.create_image(origin_x_pos, origin_y_pos, image=tk_scaled_image, anchor=tk.NW, tags=f"image{iteration}")
-            else:
-                self.canvas.create_image(origin_x_pos, origin_y_pos, image=tk_scaled_image, anchor=tk.NW, tags=f"image{iteration}")
-                self.canvas.tag_lower(f"image{iteration}")
-
-            # Store reference to avoid garbage collection
-            self.image_references.append(tk_scaled_image)
-
-            # Update scaling for the next image
-            current_scale *= scale
-            iteration += 1
-
-        # Update the output image (using original size)
-        self.update_output_image()
-
-    def update_output_image(self):
         if self.output_image:
             self.output_image.close()
         self.output_image = Image.new("RGBA", self.original_size, (255, 255, 255, 0))
+
+        scale = self.scale_slider.get()
+        self.origin_x = self.origin_x_slider.get()
+        self.origin_y = self.origin_y_slider.get()
 
         current_scale = 1.0
         images_to_paste = []
@@ -190,7 +142,7 @@ class ImageEditor:
 
             images_to_paste.append((scaled_image, (origin_x_pos, origin_y_pos)))
 
-            current_scale *= self.scale_slider.get()
+            current_scale *= scale
 
         if self.image_stack_on_top:
             for scaled_image, position in images_to_paste:
@@ -198,6 +150,26 @@ class ImageEditor:
         else:
             for scaled_image, position in reversed(images_to_paste):
                 self.output_image.paste(scaled_image, position, scaled_image)
+
+        self.display_output_image()
+
+    def display_output_image(self):
+        if self.output_image:
+            # Resize the output image to fit the canvas
+            resized_image = self.output_image.copy()
+            resized_image.thumbnail(self.canvas_size, Image.Resampling.LANCZOS)
+            
+            # Convert the image for display
+            self.tk_image = ImageTk.PhotoImage(resized_image)
+            
+            # Clear previous image and display the new one
+            self.canvas.delete("all")
+            self.canvas_image = self.canvas.create_image(
+                self.canvas_size[0] // 2, 
+                self.canvas_size[1] // 2, 
+                image=self.tk_image, 
+                anchor=tk.CENTER
+            )
 
     def save_image(self):
         if not self.output_image:
@@ -217,7 +189,7 @@ class ImageEditor:
             self.image_stack_on_top = False
         else:
             self.image_stack_on_top = True
-        self.update_transform(None)
+        self.update_output_image()
 
 
 
@@ -277,27 +249,6 @@ class ImageEditor:
         #clear previous frames
         self.frames.clear()
 
-        
-        # Fill the foreground with copies
-        self.resize_image()
-
-        if not self.enlarged_image:
-            print("No enlarged image available after resizing.")
-            return
-
-        # Crop the enlarged image
-        self.enlarged_image = self.enlarged_image.crop((self.enlarged_origin_x, self.enlarged_origin_y, self.enlarged_origin_x + self.original_size[0], self.enlarged_origin_y + self.original_size[1]))
-        
-        # Resize enlarged_image to match the original size
-        self.enlarged_image = self.enlarged_image.resize(self.original_size, Image.Resampling.LANCZOS)
-        print(f"Enlarged image - Resized to original size.")
-        
-        self.output_image = self.enlarged_image
-
-        # Clear parameters
-        self.enlarged_image = None
-        self.enlarged_image_size = None
-        
         # Call resize_image
         self.resize_image()
         print("Resized image created for APNG.")
@@ -469,7 +420,7 @@ class ImageEditor:
     def on_canvas_resize(self, event):
         self.canvas_size = (event.width, event.height)
         self.calculate_scale_factor()
-        self.update_transform(None)
+        self.display_output_image()
 
 if __name__ == "__main__":
     root = tk.Tk()
