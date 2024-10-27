@@ -359,7 +359,7 @@ class ImageEditor:
             file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("APNG Files", "*.png")])
             if file_path:
                 apng = APNG()
-                frame_list = self.frames if zoom_in else reversed(self.frames)
+                frame_list = reversed(self.frames) if zoom_in else self.frames
                 for frame_path in frame_list:
                     apng.append_file(frame_path, delay=1)
                 apng.save(file_path)
@@ -377,57 +377,45 @@ class ImageEditor:
     def save_apng_zoom_out(self):
         self.save_apng(zoom_in=False)
 
-    def save_gif_zoom_in(self):
-        #create the frames
+    def save_gif(self, zoom_in=True):
         self.create_zoom_frames()
         
-        print(f"Total frames to save: {len(self.frames)}")
-
-
-        if not self.frames:  # Check if frames are available
+        if not self.frames:
             print("No frames created. Cannot save GIF.")
             return
 
+        try:
+            file_path = filedialog.asksaveasfilename(defaultextension=".gif", filetypes=[("GIF Files", "*.gif")])
+            if file_path:
+                # Load all frames
+                gif_frames = []
+                frame_list = reversed(self.frames) if zoom_in else self.frames
+                for frame_path in frame_list:
+                    with Image.open(frame_path) as img:
+                        gif_frames.append(img.copy())
 
-        # Save the frames as GIF
-        file_path = filedialog.asksaveasfilename(defaultextension=".gif", filetypes=[("GIF Files", "*.gif")])
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+                # Save as GIF
+                if gif_frames:
+                    gif_frames[0].save(
+                        file_path,
+                        save_all=True,
+                        append_images=gif_frames[1:],
+                        duration=100,  # 100ms per frame
+                        loop=0  # 0 means infinite loop
+                    )
+                    print(f"Zoom GIF saved as {file_path}")
+            else:
+                print("No file path provided. GIF not saved.")
+        except Exception as e:
+            print(f"Error saving GIF: {e}")
+        finally:
+            self.delete_frames()
 
-        if file_path:
-            images = [Image.open(frame_path) for frame_path in self.frames]
-            images[0].save(file_path, save_all=True, append_images=images[1:], duration=100, loop=0)
-            print(f"\n\n\n\n\n\n\n\nGIF saved as {file_path}\n\n\n\n\n\n\n\n\n\n")
-        else:
-            print("No file path provided. GIF not saved.")
-            
-        self.delete_frames()
+    def save_gif_zoom_in(self):
+        self.save_gif(zoom_in=True)
 
     def save_gif_zoom_out(self):
-        #create the frames
-        self.create_zoom_frames()
-        
-        print(f"Total frames to save: {len(self.frames)}")
-
-
-        if not self.frames:  # Check if frames are available
-            print("No frames created. Cannot save GIF.")
-            return
-
-
-        # Save the frames as GIF
-        file_path = filedialog.asksaveasfilename(defaultextension=".gif", filetypes=[("GIF Files", "*.gif")])
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        if file_path:
-            images = [Image.open(frame_path) for frame_path in reversed(self.frames)]
-            images[0].save(file_path, save_all=True, append_images=images[1:], duration=100, loop=0)
-            print(f"\n\n\n\n\n\n\n\nGIF saved as {file_path}\n\n\n\n\n\n\n\n\n\n")
-        else:
-            print("No file path provided. GIF not saved.")
-            
-        self.delete_frames()
-
-        self.delete_frames()
+        self.save_gif(zoom_in=False)
 
     def on_canvas_resize(self, event):
         self.canvas_size = (event.width, event.height)
