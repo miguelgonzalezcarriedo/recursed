@@ -126,30 +126,42 @@ class ImageEditor:
         self.origin_y = self.origin_y_slider.get()
 
         current_scale = 1.0
-        images_to_paste = []
+        downscaled_images_to_paste = []
+        upscaled_images_to_paste = []
 
         while True:
-            canvas_width = self.original_size[0] * current_scale
-            canvas_height = self.original_size[1] * current_scale
-
-            if canvas_width < 1 or canvas_height < 1:
+            if self.original_size[0] * current_scale < 1 or self.original_size[1] * current_scale < 1:
                 break
 
-            origin_x_pos = int((self.original_size[0] - canvas_width) * self.origin_x)
-            origin_y_pos = int((self.original_size[1] - canvas_height) * self.origin_y)
+            origin_x_pos = int((self.original_size[0] - self.original_size[0] * current_scale) * self.origin_x)
+            origin_y_pos = int((self.original_size[1] - self.original_size[1] * current_scale) * self.origin_y)
 
-            scaled_image = self.image.resize((int(canvas_width), int(canvas_height)), Image.Resampling.LANCZOS)
+            downscaled_image = self.image.resize((int(self.original_size[0] * current_scale), int(self.original_size[1] * current_scale)), Image.Resampling.LANCZOS)
+            crop_size = (int(self.original_size[0] * current_scale), int(self.original_size[1] * current_scale))
+            crop_box = (
+                int((self.original_size[0] - crop_size[0]) * self.origin_x),
+                int((self.original_size[1] - crop_size[1]) * self.origin_y),
+                int((self.original_size[0] - crop_size[0]) * self.origin_x) + crop_size[0],
+                int((self.original_size[1] - crop_size[1]) * self.origin_y) + crop_size[1]
+            )
+            upscaled_image = self.image.crop(crop_box)
+            upscaled_image = upscaled_image.resize(self.original_size, Image.Resampling.LANCZOS)
 
-            images_to_paste.append((scaled_image, (origin_x_pos, origin_y_pos)))
+            downscaled_images_to_paste.append((downscaled_image, (origin_x_pos, origin_y_pos)))
+            upscaled_images_to_paste.insert(0, upscaled_image)
 
             current_scale *= scale
 
         if self.image_stack_on_top:
-            for scaled_image, position in images_to_paste:
-                self.output_image.paste(scaled_image, position, scaled_image)
+            for upscaled_image in upscaled_images_to_paste:
+                self.output_image.paste(upscaled_image, upscaled_image)
+            for downscaled_image, position in downscaled_images_to_paste:
+                self.output_image.paste(downscaled_image, position, downscaled_image)
         else:
-            for scaled_image, position in reversed(images_to_paste):
-                self.output_image.paste(scaled_image, position, scaled_image)
+            for downscaled_image, position in reversed(downscaled_images_to_paste):
+                self.output_image.paste(downscaled_image, position, downscaled_image)
+            for upscaled_image in reversed(upscaled_images_to_paste):
+                self.output_image.paste(upscaled_image, upscaled_image)
 
         self.display_output_image()
 
