@@ -69,11 +69,28 @@
         </div>
     </div>
     <footer class="footer">
-        <p>Created by Miguel using Claude</p>
+        <p>Created by Miguel using Claude • Version B</p>
     </footer>
-    <!-- Change CDN link to local file -->
-    <script src="lib/pako.min.js"></script>
-    <script src="lib/upng.js"></script>
+    <!-- Add error handling for library loading -->
+    <script>
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo + '\nColumn: ' + columnNo + '\nError object: ' + JSON.stringify(error));
+            return false;
+        };
+    </script>
+    
+    <!-- Update script paths and add checks -->
+    <script src="/recursion/lib/pako.min.js" onerror="console.error('Failed to load pako.min.js')"></script>
+    <script src="/recursion/lib/upng.js" onerror="console.error('Failed to load upng.js')"></script>
+    <script>
+        // Check if libraries are loaded
+        if (typeof UPNG === 'undefined') {
+            console.error('UPNG library not loaded properly');
+        }
+        if (typeof pako === 'undefined') {
+            console.error('pako library not loaded properly');
+        }
+    </script>
     <script src="script.js"></script>
 </body>
 </html>
