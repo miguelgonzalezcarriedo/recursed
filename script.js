@@ -21,6 +21,7 @@ class ImageEditor {
         
         this.setupEventListeners();
         this.resizeCanvas();
+        this.loadDefaultImage(); // Add this line
     }
 
     setupEventListeners() {
@@ -85,24 +86,34 @@ class ImageEditor {
         this.displayOutputImage();
     }
 
+    loadDefaultImage() {
+        this.loadImageFromUrl('default.png');
+    }
+
+    loadImageFromUrl(url) {
+        const img = new Image();
+        img.onload = () => {
+            this.image = img;
+            this.originalSize = {
+                width: img.width,
+                height: img.height
+            };
+            this.calculateScaleFactor();
+            this.updateOutputImage();
+            this.updatePreviews();
+        };
+        img.onerror = () => {
+            console.error('Failed to load image:', url);
+        };
+        img.src = url;
+    }
+
     loadImage(event) {
         const file = event.target.files[0];
         if (file) {
             const reader = new FileReader();
             reader.onload = (e) => {
-                const img = new Image();
-                img.onload = () => {
-                    this.image = img;
-                    this.originalSize = {
-                        width: img.width,
-                        height: img.height
-                    };
-                    this.calculateScaleFactor();
-                    this.updateOutputImage();
-                    // Add preview generation after image is loaded
-                    this.updatePreviews();
-                };
-                img.src = e.target.result;
+                this.loadImageFromUrl(e.target.result);
             };
             reader.readAsDataURL(file);
         }
@@ -409,6 +420,10 @@ class ImageEditor {
             this.frames.push(frameCanvas);
         }
 
+        if (this.frames.length > 0) {
+            this.createFavicon(); // Add this line
+        }
+        
         return this.frames.length > 0;
     }
 
@@ -511,6 +526,38 @@ class ImageEditor {
 
         // Start animation
         animate();
+    }
+
+    // Add this method to the ImageEditor class
+    createFavicon() {
+        if (!this.frames || this.frames.length === 0) return;
+
+        // Create a small canvas for the favicon (typically 32x32)
+        const faviconSize = 32;
+        const faviconCanvas = document.createElement('canvas');
+        faviconCanvas.width = faviconSize;
+        faviconCanvas.height = faviconSize;
+        const ctx = faviconCanvas.getContext('2d');
+
+        // Scale and draw each frame
+        const frameList = [...this.frames];
+        const frameData = frameList.map(canvas => {
+            ctx.clearRect(0, 0, faviconSize, faviconSize);
+            ctx.drawImage(canvas, 0, 0, faviconSize, faviconSize);
+            return ctx.getImageData(0, 0, faviconSize, faviconSize).data;
+        });
+
+        // Create APNG
+        const delays = new Array(frameData.length).fill(100);
+        const pngData = UPNG.encode(frameData, faviconSize, faviconSize, 0, delays);
+
+        // Create blob and update favicon
+        const blob = new Blob([pngData], { type: 'image/png' });
+        const url = URL.createObjectURL(blob);
+        const link = document.querySelector("link[rel*='icon']");
+        if (link) {
+            link.href = url;
+        }
     }
 }
 
