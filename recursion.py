@@ -5,6 +5,7 @@ from PIL import Image, ImageTk
 from apng import APNG
 import numpy as np
 import math
+import tempfile
 
 # Constants
 DEFAULT_FRAME_COUNT = 15
@@ -258,7 +259,7 @@ class ImageEditor:
 
 
     def create_zoom_frames(self):
-        #clear previous frames
+        # Clear previous frames
         self.frames.clear()
 
         # Call resize_image
@@ -283,7 +284,7 @@ class ImageEditor:
             return
 
         # Define parameters for APNG
-        num_frames = frame_count  # Remove the +2, we'll create exactly the number of frames specified
+        num_frames = frame_count
 
         print(f"Enlarged Image Size: {self.enlarged_image_size}")
         print(f"Original Image Size: {self.original_size}")
@@ -295,7 +296,7 @@ class ImageEditor:
         # Create each frame of the APNG
         for i in range(num_frames):
             # Calculate the exponential scale factor
-            t = i / num_frames  # Changed from (num_frames - 1) to num_frames
+            t = i / num_frames
             current_scale = start_scale * math.exp(t * math.log(end_scale / start_scale))
 
             # Calculate the frame size
@@ -305,7 +306,7 @@ class ImageEditor:
             )
             print(f"Frame {i} - Frame Size: {frame_size}")
 
-            # Check if the frame size is valid (non-zero, within enlarged image bounds)
+            # Check if the frame size is valid
             if frame_size[0] <= 0 or frame_size[1] <= 0 or frame_size[0] > self.enlarged_image_size[0] or frame_size[1] > self.enlarged_image_size[1]:
                 print(f"Frame {i} - Invalid frame size: {frame_size}. Skipping frame.")
                 continue
@@ -329,24 +330,13 @@ class ImageEditor:
             frame_image = frame_image.resize(self.original_size, Image.Resampling.LANCZOS)
             print(f"Frame {i} - Resized to original size.")
 
-            # Save each frame as PNG for APNG creation
-            frame_path = f"frame_{i}.png"
-            frame_image.save(frame_path)
-            print(f"Frame {i} saved as {frame_path}.")
-            self.frames.append(frame_path)
+            # Store the frame in memory
+            self.frames.append(frame_image)
             print(f"Total frames so far: {len(self.frames)}")
 
         if len(self.frames) == 0:
             print("No valid frames were created. Cannot save APNG.")
-            return  # Exit if no frames were created
-
-    def delete_frames(self):
-        for frame_path in self.frames:
-            try:
-                os.remove(frame_path)
-                print(f"{frame_path} removed")
-            except Exception as e:
-                print(f"Error removing {frame_path}: {e}")
+            return
 
     def save_apng(self, zoom_in=True):
         self.create_zoom_frames()
@@ -360,16 +350,17 @@ class ImageEditor:
             if file_path:
                 apng = APNG()
                 frame_list = reversed(self.frames) if zoom_in else self.frames
-                for frame_path in frame_list:
-                    apng.append_file(frame_path, delay=1)
+                for frame_image in frame_list:
+                    # Save the frame to a temporary file and append it to the APNG
+                    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
+                        frame_image.save(temp_file.name)
+                        apng.append_file(temp_file.name, delay=100)  # Adjust delay as needed
                 apng.save(file_path)
                 print(f"Zoom APNG saved as {file_path}")
             else:
                 print("No file path provided. APNG not saved.")
         except Exception as e:
             print(f"Error saving APNG: {e}")
-        finally:
-            self.delete_frames()
 
     def save_apng_zoom_in(self):
         self.save_apng(zoom_in=True)
@@ -390,9 +381,8 @@ class ImageEditor:
                 # Load all frames
                 gif_frames = []
                 frame_list = reversed(self.frames) if zoom_in else self.frames
-                for frame_path in frame_list:
-                    with Image.open(frame_path) as img:
-                        gif_frames.append(img.copy())
+                for frame_image in frame_list:
+                    gif_frames.append(frame_image)
 
                 # Save as GIF
                 if gif_frames:
@@ -408,8 +398,6 @@ class ImageEditor:
                 print("No file path provided. GIF not saved.")
         except Exception as e:
             print(f"Error saving GIF: {e}")
-        finally:
-            self.delete_frames()
 
     def save_gif_zoom_in(self):
         self.save_gif(zoom_in=True)
