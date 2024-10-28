@@ -378,11 +378,16 @@ class ImageEditor:
         try:
             file_path = filedialog.asksaveasfilename(defaultextension=".gif", filetypes=[("GIF Files", "*.gif")])
             if file_path:
-                # Load all frames
-                gif_frames = []
+                # Use temporary files to store each frame
+                temp_files = []
                 frame_list = reversed(self.frames) if zoom_in else self.frames
                 for frame_image in frame_list:
-                    gif_frames.append(frame_image)
+                    temp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+                    frame_image.save(temp_file.name)
+                    temp_files.append(temp_file.name)
+
+                # Load all frames from temporary files
+                gif_frames = [Image.open(temp_file) for temp_file in temp_files]
 
                 # Save as GIF
                 if gif_frames:
@@ -394,6 +399,10 @@ class ImageEditor:
                         loop=0  # 0 means infinite loop
                     )
                     print(f"Zoom GIF saved as {file_path}")
+
+                # Clean up temporary files
+                for temp_file in temp_files:
+                    os.remove(temp_file)
             else:
                 print("No file path provided. GIF not saved.")
         except Exception as e:
