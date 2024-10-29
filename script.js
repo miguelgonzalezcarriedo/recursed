@@ -259,14 +259,44 @@ class ImageEditor {
         link.click();
     }
 
-    // Note: APNG and GIF creation would require additional libraries
-    // Here's a placeholder that saves the current frame
     saveApng(zoomIn) {
-        alert('APNG creation requires additional libraries. This is a placeholder.');
-        this.saveImage();
+        if (!this.createZoomFrames()) {
+            console.log("No frames created. Cannot save APNG.");
+            return;
+        }
+
+        // Convert frames to image data
+        const frameList = zoomIn ? [...this.frames].reverse() : [...this.frames];
+        const frameData = frameList.map(canvas => {
+            const ctx = canvas.getContext('2d');
+            // Create a new ImageData with a white background
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            return imgData.data;
+        });
+
+        // Create APNG
+        const delays = new Array(frameData.length).fill(100); // 100ms delay for each frame
+        const disposes = new Array(frameData.length).fill(2); // 2 = dispose to previous
+        const blends = new Array(frameData.length).fill(0);   // 0 = source over
+        const pngData = UPNG.encode(frameData, this.originalSize.width, this.originalSize.height, 0, delays, disposes, blends);
+
+        // Save file
+        const blob = new Blob([pngData], { type: 'image/png' });
+        const link = document.createElement('a');
+        link.download = 'animation.png';
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        URL.revokeObjectURL(link.href);
     }
 
     saveGif(zoomIn) {
+        if (!this.createZoomFrames()) {
+            console.log("No frames created. Cannot save GIF.");
+            return;
+        }
+
+        // For GIF creation, you would need to add a GIF encoding library
+        // For now, we'll just save the first frame
         alert('GIF creation requires additional libraries. This is a placeholder.');
         this.saveImage();
     }
@@ -427,44 +457,6 @@ class ImageEditor {
         return this.frames.length > 0;
     }
 
-    saveApng(zoomIn) {
-        if (!this.createZoomFrames()) {
-            console.log("No frames created. Cannot save APNG.");
-            return;
-        }
-
-        // Convert frames to image data
-        const frameList = zoomIn ? this.frames.reverse() : this.frames;
-        const frameData = frameList.map(canvas => {
-            const ctx = canvas.getContext('2d');
-            return ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-        });
-
-        // Create APNG
-        const delays = new Array(frameData.length).fill(100); // 100ms delay for each frame
-        const pngData = UPNG.encode(frameData, this.originalSize.width, this.originalSize.height, 0, delays);
-
-        // Save file
-        const blob = new Blob([pngData], { type: 'image/png' });
-        const link = document.createElement('a');
-        link.download = 'animation.png';
-        link.href = URL.createObjectURL(blob);
-        link.click();
-        URL.revokeObjectURL(link.href);
-    }
-
-    saveGif(zoomIn) {
-        if (!this.createZoomFrames()) {
-            console.log("No frames created. Cannot save GIF.");
-            return;
-        }
-
-        // For GIF creation, you would need to add a GIF encoding library
-        // For now, we'll just save the first frame
-        alert('GIF creation requires additional libraries. This is a placeholder.');
-        this.saveImage();
-    }
-
     updatePreviews() {
         this.createAndDisplayPreview(true);  // Zoom In
         this.createAndDisplayPreview(false); // Zoom Out
@@ -547,9 +539,10 @@ class ImageEditor {
             return ctx.getImageData(0, 0, faviconSize, faviconSize).data;
         });
 
-        // Create APNG
+        // Create APNG with dispose:1 to clear previous frame
         const delays = new Array(frameData.length).fill(100);
-        const pngData = UPNG.encode(frameData, faviconSize, faviconSize, 0, delays);
+        const disposes = new Array(frameData.length).fill(1);
+        const pngData = UPNG.encode(frameData, faviconSize, faviconSize, 0, delays, null, disposes);
 
         // Create blob and update favicon
         const blob = new Blob([pngData], { type: 'image/png' });
