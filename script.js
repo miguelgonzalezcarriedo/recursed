@@ -295,10 +295,63 @@ class ImageEditor {
             return;
         }
 
-        // For GIF creation, you would need to add a GIF encoding library
-        // For now, we'll just save the first frame
-        alert('GIF creation requires additional libraries. This is a placeholder.');
-        this.saveImage();
+        // Convert frames to image data
+        const frameList = zoomIn ? [...this.frames].reverse() : [...this.frames];
+        
+        // Create GIF encoder
+        const gif = new GIF({
+            workers: 2,
+            quality: 10,
+            width: this.originalSize.width,
+            height: this.originalSize.height,
+            workerScript: 'gif.worker.js',
+            transparent: 0x00000000,  // Fully transparent black
+            dither: false            // Disable dithering to preserve exact colors
+        });
+
+        // Add each frame to the GIF
+        frameList.forEach(canvas => {
+            // Create a temporary canvas to handle transparency properly
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            
+            // Draw the frame
+            tempCtx.drawImage(canvas, 0, 0);
+            
+            // Get image data
+            const imageData = tempCtx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            
+            // Fix transparency - make semi-transparent pixels fully opaque
+            for (let i = 0; i < data.length; i += 4) {
+                if (data[i + 3] > 0) {  // If pixel has any opacity
+                    data[i + 3] = 255;   // Make it fully opaque
+                }
+            }
+            
+            // Put the modified image data back
+            tempCtx.putImageData(imageData, 0, 0);
+            
+            // Add frame to GIF
+            gif.addFrame(tempCanvas, {
+                delay: 100,
+                transparent: true,
+                dispose: 2  // Restore to background color
+            });
+        });
+
+        // Render the GIF
+        gif.on('finished', blob => {
+            const link = document.createElement('a');
+            link.download = 'animation.gif';
+            link.href = URL.createObjectURL(blob);
+            link.click();
+            URL.revokeObjectURL(link.href);
+        });
+
+        gif.render();
     }
 
     resizeImage() {
