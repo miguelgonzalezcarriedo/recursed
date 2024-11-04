@@ -31,7 +31,6 @@ class ImageEditor:
 
         self.transformation_corners = []  # Store corner positions
         self.current_corner = 0  # Track which corner we're setting
-        self.max_corners = 4  # Maximum number of corners to track
 
         # First setup the UI (which creates the canvas)
         self.setup_ui()
@@ -98,107 +97,167 @@ class ImageEditor:
         except Exception as e:
             print(f"Error loading image: {e}")
 
-    def update_output_image(self, event=None):
-        if not self.image:
-            return
+    def calculate_iteration_corners(self):
+        """Calculate corner positions for recursive transformations"""
+        if len(self.transformation_corners) < 4:
+            return [], []
+        
+        def calculate_min_distance(corners):
+            """Calculate minimum distance between any two corners"""
+            min_dist = float('inf')
+            for i in range(len(corners)):
+                x1, y1 = corners[i]
+                for j in range(i + 1, len(corners)):
+                    x2, y2 = corners[j]
+                    dist = math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+                    min_dist = min(min_dist, dist)
+            return min_dist
+        
+        # Get original image dimensions
+        width, height = self.original_size
+        original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
+        
+        print("\nDebug Information:")
+        print(f"Original corners: {original_corners}")
+        print(f"User-selected corners: {self.transformation_corners}")
+        
+        # Calculate transformation coefficients
+        transform_coeffs = self.find_coeffs(original_corners, self.transformation_corners)
+        inverse_coeffs = self.find_coeffs(self.transformation_corners, original_corners)
+        print(f"Transform coefficients: {transform_coeffs}")
+        print(f"Inverse coefficients: {inverse_coeffs}")
+        
+        contracting_corner_sets = []
+        expanding_corner_sets = []
+        
+        # Initialize both corner sets
+        contracting_corners = original_corners.copy()
+        expanding_corners = original_corners.copy()
+        iteration = 0
+        max_iterations = 20  # Safety limit
+        print("\nTransformations:")
+        
+        while iteration < max_iterations:
+            min_distance = calculate_min_distance(contracting_corners)
+            if min_distance < 1:
+                print(f"Breaking loop - min distance ({min_distance:.2f}) < 1")
+                break
+                
+            print(f"\nIteration {iteration + 1}:")
+            print(f"Contracting corners: {contracting_corners}")
+            print(f"Min distance: {min_distance:.2f}")
+            
+            # Calculate next contracting corners
+            next_contracting = []
+            for x, y in contracting_corners:
+                denominator = transform_coeffs[6] * x + transform_coeffs[7] * y + 1
+                new_x = (transform_coeffs[0] * x + transform_coeffs[1] * y + transform_coeffs[2]) / denominator
+                new_y = (transform_coeffs[3] * x + transform_coeffs[4] * y + transform_coeffs[5]) / denominator
+                next_contracting.append((new_x, new_y))
+            
+            # Calculate next expanding corners
+            next_expanding = []
+            for x, y in expanding_corners:
+                denominator = inverse_coeffs[6] * x + inverse_coeffs[7] * y + 1
+                new_x = (inverse_coeffs[0] * x + inverse_coeffs[1] * y + inverse_coeffs[2]) / denominator
+                new_y = (inverse_coeffs[3] * x + inverse_coeffs[4] * y + inverse_coeffs[5]) / denominator
+                next_expanding.append((new_x, new_y))
+            
+            print(f"Next contracting corners: {next_contracting}")
+            print(f"Next expanding corners: {next_expanding}")
+            
+            contracting_corner_sets.append(next_contracting)
+            expanding_corner_sets.append(next_expanding)
+            
+            contracting_corners = next_contracting
+            expanding_corners = next_expanding
+            iteration += 1
+        
+        print(f"\nFinal number of corner sets: {len(contracting_corner_sets)}")
+        return contracting_corner_sets, expanding_corner_sets
 
-        # Create a new blank output image
+    def create_transformed_copies(self, contracting_corner_sets, expanding_corner_sets):
+        """Step 2: Create all transformed copies using the corner sets"""
+        width, height = self.original_size
+        original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
+        transformed_images = []
+        
+        print("\nCreating transformed copies:")
+        print(f"Expanding sets: {len(expanding_corner_sets)}")
+        print(f"Contracting sets: {len(contracting_corner_sets)}")
+        
+        # Create expanding transformations (from largest to smallest)
+        for expanding_corners in reversed(expanding_corner_sets):
+            # Transform from original corners to expanded corners
+            expanding_coeffs = self.find_coeffs(original_corners, expanding_corners)
+            expanding_transformed = self.image.transform(
+                self.original_size,
+                Image.PERSPECTIVE,
+                expanding_coeffs,
+                Image.Resampling.BICUBIC
+            )
+            transformed_images.append(expanding_transformed)
+            print(f"Added expanding transformation")
+        
+        # Add original image in the middle
+        transformed_images.append(self.image)
+        print("Added original image")
+        
+        # Create contracting transformations (from largest to smallest)
+        for contracting_corners in contracting_corner_sets:
+            # Transform from original corners to contracted corners
+            contracting_coeffs = self.find_coeffs(original_corners, contracting_corners)
+            contracting_transformed = self.image.transform(
+                self.original_size,
+                Image.PERSPECTIVE,
+                contracting_coeffs,
+                Image.Resampling.BICUBIC
+            )
+            transformed_images.append(contracting_transformed)
+            print(f"Added contracting transformation")
+        
+        print(f"Total images created: {len(transformed_images)}")
+        return transformed_images
+
+    def stack_transformed_images(self, transformed_images):
+        """Step 3: Stack all transformed images together"""
         if self.output_image:
             self.output_image.close()
         self.output_image = Image.new("RGBA", self.original_size, (255, 255, 255, 0))
+        
+        if not self.image_stack_on_top:
+            # Stack from bottom to top
+            for image in transformed_images:
+                self.output_image.paste(image, (0, 0), image)
+        else:
+            # Stack from top to bottom
+            for image in reversed(transformed_images):
+                self.output_image.paste(image, (0, 0), image)
 
-        # If we don't have enough corners yet, just display the original image
+    def update_output_image(self, event=None):
+        """Main method that coordinates the three steps"""
+        if not self.image:
+            return
+            
         if len(self.transformation_corners) < 4:
             self.output_image = self.image.copy()
             self.display_output_image()
             return
-
+            
         try:
-            # Define the source corners (original image corners)
-            width, height = self.original_size
-            src_corners = [(0, 0), (width, 0), (width, height), (0, height)]
-
-            # Get destination corners from our stored positions
-            dst_corners = self.transformation_corners
-
-            # Calculate the coefficients for both contracting and expanding transformations
-            contracting_coeffs = self.find_coeffs(dst_corners, src_corners)  # Makes image smaller
-            expanding_coeffs = self.find_coeffs(src_corners, dst_corners)    # Makes image larger
-
-            # Create first transformed images
-            current_contracting = self.image.copy()
-            current_expanding = self.image.copy()
-            transformed_images = []
-
-            while True:
-                # Create contracting transformed image (gets smaller)
-                contracting_transformed = current_contracting.transform(
-                    self.original_size,
-                    Image.PERSPECTIVE,
-                    contracting_coeffs,
-                    Image.Resampling.BICUBIC
-                )
-                
-                # Create expanding transformed image (gets larger)
-                expanding_transformed = current_expanding.transform(
-                    self.original_size,
-                    Image.PERSPECTIVE,
-                    expanding_coeffs,
-                    Image.Resampling.BICUBIC
-                )
-                
-                # Calculate the actual sizes of transformed images
-                contracting_bbox = contracting_transformed.getbbox()
-                expanding_bbox = expanding_transformed.getbbox()
-                
-                if not contracting_bbox or not expanding_bbox:  # Fallback check for completely transparent images
-                    break
-                
-                contracting_width = contracting_bbox[2] - contracting_bbox[0]
-                contracting_height = contracting_bbox[3] - contracting_bbox[1]
-                expanding_width = expanding_bbox[2] - expanding_bbox[0]
-                expanding_height = expanding_bbox[3] - expanding_bbox[1]
-                
-                # Stop if either transformed area becomes smaller than 1 pixel
-                if (contracting_width * contracting_height < 1 or 
-                    expanding_width * expanding_height < 1):
-                    break
-                
-                # Store both transformations
-                transformed_images.append((contracting_transformed, expanding_transformed))
-                
-                # Update current images for next iteration
-                current_contracting = contracting_transformed.copy()
-                current_expanding = expanding_transformed.copy()
-
-            # Stack all the images
-            if self.image_stack_on_top:
-                # First paste all expanding transformations from last to first
-                for contracting, expanding in reversed(transformed_images):
-                    self.output_image.paste(expanding, (0, 0), expanding)
-                
-                # Then paste original image in the middle
-                self.output_image.paste(self.image, (0, 0), self.image)
-                
-                # Finally paste all contracting transformations from first to last
-                for contracting, expanding in transformed_images:
-                    self.output_image.paste(contracting, (0, 0), contracting)
-            else:
-                # First paste all contracting transformations from last to first
-                for contracting, expanding in reversed(transformed_images):
-                    self.output_image.paste(contracting, (0, 0), contracting)
-                
-                # Then paste original image in the middle
-                self.output_image.paste(self.image, (0, 0), self.image)
-                
-                # Finally paste all expanding transformations from first to last
-                for contracting, expanding in transformed_images:
-                    self.output_image.paste(expanding, (0, 0), expanding)
-
+            # Step 1: Calculate all corner positions
+            contracting_corner_sets, expanding_corner_sets = self.calculate_iteration_corners()
+            
+            # Step 2: Create transformed copies
+            transformed_images = self.create_transformed_copies(contracting_corner_sets, expanding_corner_sets)
+            
+            # Step 3: Stack the images together
+            self.stack_transformed_images(transformed_images)
+            
         except Exception as e:
             print(f"Error applying transformation: {e}")
             self.output_image = self.image.copy()
-
+        
         self.display_output_image()
 
     def find_coeffs(self, pa, pb):
@@ -458,13 +517,13 @@ class ImageEditor:
         image_y = max(0, min(image_y, self.original_size[1]))
         
         # Add or update corner position
-        if len(self.transformation_corners) < self.max_corners:
+        if len(self.transformation_corners) < 4:
             self.transformation_corners.append((image_x, image_y))
         else:
             self.transformation_corners[self.current_corner] = (image_x, image_y)
         
         # Update current corner index
-        self.current_corner = (self.current_corner + 1) % self.max_corners
+        self.current_corner = (self.current_corner + 1) % 4
         
         # Print corner positions
         print(f"Corner {self.current_corner} set to: ({image_x}, {image_y})")
