@@ -31,7 +31,6 @@ class ImageEditor:
         self.frames = []
         self.image_stack_on_top = True
         self.canvas_size = (0, 0)
-        self.scale_factor = 1.0
         self.canvas_image = None  # Add this line to store the canvas image
 
         self.setup_ui()
@@ -103,16 +102,9 @@ class ImageEditor:
             if file_path:
                 self.image = Image.open(file_path).convert("RGBA")
                 self.original_size = self.image.size
-                self.calculate_scale_factor()
                 self.update_output_image()
         except Exception as e:
             print(f"Error loading image: {e}")
-
-    def calculate_scale_factor(self):
-        if self.image and self.canvas_size != (0, 0):
-            width_ratio = self.canvas_size[0] / self.original_size[0]
-            height_ratio = self.canvas_size[1] / self.original_size[1]
-            self.scale_factor = min(width_ratio, height_ratio)
 
     def update_output_image(self, event=None):
         if not self.image:
@@ -290,14 +282,13 @@ class ImageEditor:
         print(f"Original Image Size: {self.original_size}")
 
         # Calculate the total scale change
-        start_scale = 1.0
         end_scale = self.enlarged_image_size[0] / self.original_size[0]
 
         # Create each frame of the APNG
         for i in range(num_frames):
             # Calculate the exponential scale factor
             t = i / num_frames
-            current_scale = start_scale * math.exp(t * math.log(end_scale / start_scale))
+            current_scale = end_scale ** t
 
             # Calculate the frame size
             frame_size = (
@@ -416,7 +407,6 @@ class ImageEditor:
 
     def on_canvas_resize(self, event):
         self.canvas_size = (event.width, event.height)
-        self.calculate_scale_factor()
         self.display_output_image()
 
 if __name__ == "__main__":
