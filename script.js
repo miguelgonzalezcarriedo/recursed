@@ -21,7 +21,14 @@ class ImageEditor {
         
         this.setupEventListeners();
         this.resizeCanvas();
-        this.loadDefaultImage(); // Add this line
+        this.loadDefaultImage();
+        this.applyRandomColors();
+        this.adjustTitleFontSize();
+        
+        // Add resize listener for title adjustment
+        window.addEventListener('resize', () => {
+            this.adjustTitleFontSize();
+        });
     }
 
     setupEventListeners() {
@@ -603,6 +610,70 @@ class ImageEditor {
         const link = document.querySelector("link[rel*='icon']");
         if (link) {
             link.href = url;
+        }
+    }
+
+    // Add this method to the ImageEditor class
+    applyRandomColors() {
+        const getRandomLightColor = () => {
+            const r = Math.floor(Math.random() * 156 + 100);
+            const g = Math.floor(Math.random() * 156 + 100);
+            const b = Math.floor(Math.random() * 156 + 100);
+            return `rgb(${r}, ${g}, ${b})`;
+        };
+
+        const getRandomDarkColor = () => {
+            const r = Math.floor(Math.random() * 100);
+            const g = Math.floor(Math.random() * 100);
+            const b = Math.floor(Math.random() * 100);
+            return `rgb(${r}, ${g}, ${b})`;
+        };
+
+        // Apply colors to main elements
+        document.body.style.backgroundColor = getRandomLightColor();
+        
+        // Header/title section
+        const titleSection = document.querySelector('.title-section');
+        titleSection.style.backgroundColor = getRandomLightColor();
+        titleSection.style.borderColor = getRandomDarkColor();
+        
+        // Controls and preview sections
+        document.querySelectorAll('.controls, .preview').forEach(element => {
+            element.style.backgroundColor = getRandomLightColor();
+            element.style.borderColor = getRandomDarkColor();
+        });
+        
+        // Upload section
+        const uploadSection = document.querySelector('.upload-section');
+        uploadSection.style.backgroundColor = getRandomLightColor();
+        uploadSection.style.borderColor = getRandomDarkColor();
+        
+        // Footer
+        const footer = document.querySelector('.footer');
+        footer.style.backgroundColor = getRandomLightColor();
+        footer.style.borderColor = getRandomDarkColor();
+
+        // Add random dark colors for all buttons
+        document.querySelectorAll('button').forEach(button => {
+            button.style.borderColor = getRandomDarkColor();
+        });
+    }
+
+    // Add this new method
+    adjustTitleFontSize() {
+        const title = document.querySelector('.title-section h1');
+        const titleSection = document.querySelector('.title-section');
+        
+        // Reset font size to original
+        title.style.fontSize = '3.5em';
+        
+        // Check if title overflows
+        while (title.offsetWidth > titleSection.offsetWidth - 40) { // 40px for padding
+            const currentSize = parseFloat(window.getComputedStyle(title).fontSize);
+            title.style.fontSize = (currentSize - 1) + 'px';
+            
+            // Safety check to prevent infinite loop
+            if (currentSize <= 12) break; // Minimum font size
         }
     }
 }

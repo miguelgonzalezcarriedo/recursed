@@ -1,43 +1,64 @@
-/* Add at the top of the file */
-.top-border {
-    height: 2px;
-    background-color: #4CAF50;
+/* Add these font imports at the top */
+@import url('https://fonts.googleapis.com/css2?family=UnifrakturMaguntia&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap');
+
+/* Update body styles */
+body {
+    font-family: 'Cambria Math', 'STIX Two Math', serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f8f8;  /* Light default background */
 }
 
+/* Update title section styles */
 .title-section {
     text-align: center;
-    margin-bottom: 30px;
+    margin: 0;
     padding: 20px 0;
-    border-bottom: 2px solid #4CAF50;
+    border-bottom: 3px solid #4CAF50;
+    border-top: 3px solid #4CAF50;
+    background-color: white;
 }
 
 .title-section h1 {
-    font-family: 'UnifrakturMaguntia', cursive;
+    font-family: 'Cinzel', 'UnifrakturMaguntia', cursive;
     font-size: 3.5em;
     margin: 0;
-    color: #2c5530;
+    color: black;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+    position: relative;
+    display: inline-block;
+    padding: 0 20px;
 }
 
 .title-section p {
     font-size: 1.1em;
-    color: #666;
+    color: black;
     max-width: 800px;
     margin: 10px auto;
     line-height: 1.4;
 }
 
+/* Update container styles */
 .container {
     max-width: 1200px;
+    width: 100%;
     margin: 0 auto;
     padding: 20px;
+    flex: 1;
+    box-sizing: border-box;
 }
 
+/* Update controls styles to match card style */
 .controls {
     margin-bottom: 20px;
-    padding: 15px;
-    background-color: #f5f5f5;
-    border-radius: 5px;
+    padding: 20px;
+    background-color: white;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -59,37 +80,47 @@
 
 .slider-container {
     flex: 1;
-    min-width: 200px;
+    min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
+    box-sizing: border-box;
 }
 
 button {
     margin: 5px;
     padding: 8px 16px;
-    background-color: #4CAF50;
-    color: white;
-    border: none;
+    background-color: white;
+    color: black;
+    border: 2px solid #333;
     border-radius: 4px;
     cursor: pointer;
 }
 
 button:hover {
-    background-color: #45a049;
+    background-color: #f0f0f0;
 }
 
+/* Update preview container styles */
 .preview-container {
     display: flex;
     gap: 20px;
     width: 100%;
+    flex-wrap: wrap;
 }
 
 .preview {
-    flex: 1;
-    min-width: 300px;
+    flex: 1 1 300px;
+    min-width: 0;
+    max-width: 100%;
+    background-color: white;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     align-items: center;
+    box-sizing: border-box;
 }
 
 .preview h3 {
@@ -98,8 +129,9 @@ button:hover {
 }
 
 .preview canvas {
-    width: 100%;
-    height: 300px;
+    width: auto;
+    max-width: 100%;
+    max-height: 300px;
     border: 1px solid #ccc;
     background-color: white;
     object-fit: contain;
@@ -131,15 +163,18 @@ input[type="range"] {
 }
 
 .frame-count label {
-    color: #444;
+    color: black;
     font-size: 14px;
 }
 
+/* Update upload section styles */
 .upload-section {
     text-align: center;
     margin-bottom: 30px;
-    padding: 20px 0;
-    border-bottom: 2px solid #4CAF50;
+    padding: 20px;
+    background-color: white;
+    border-radius: 10px;
+    border: 2px solid #4CAF50;
 }
 
 .upload-message {
@@ -148,7 +183,7 @@ input[type="range"] {
 
 .upload-message p {
     font-size: 1.1em;
-    color: #666;
+    color: black;
     margin: 0;
 }
 
@@ -164,13 +199,16 @@ input[type="file"]:hover {
     background-color: #f0f8f0;
 }
 
+/* Update footer styles */
 .footer {
     text-align: center;
     padding: 20px;
-    margin-top: 40px;
-    border-top: 2px solid #4CAF50;
-    color: #666;
+    border-top: 3px solid #4CAF50;
+    border-bottom: 3px solid #4CAF50;
+    background-color: white;
+    color: black;
     font-size: 0.9em;
+    margin-top: auto;
 }
 
 .footer p {
@@ -187,20 +225,58 @@ input[type="file"]:hover {
     white-space: nowrap;
 }
 
-@media (max-width: 1000px) {
-    .sliders {
-        flex-direction: column;
+/* Add responsive design improvements */
+@media (max-width: 768px) {
+    .container {
+        padding: 10px;
     }
-    
+
     .preview-container {
         flex-direction: column;
-    }
-    
-    .slider-container {
-        width: 100%;
+        gap: 10px;
     }
     
     .preview {
         width: 100%;
+        padding: 10px;
+        margin: 5px 0;
     }
+    
+    .controls {
+        padding: 10px;
+    }
+
+    .sliders {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .slider-container {
+        width: 100%;
+    }
+
+    input[type="range"] {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+/* Update description section styles - remove box and background */
+.description-section {
+    text-align: center;
+    margin: 20px auto;
+    padding: 10px 20px;
+    max-width: 800px;
+}
+
+.description-section p {
+    font-size: 1.1em;
+    color: black;
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Add box-sizing to all elements */
+* {
+    box-sizing: border-box;
 }

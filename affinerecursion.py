@@ -29,6 +29,10 @@ class ImageEditor:
         self.scale_factor = 1.0
         self.canvas_image = None
 
+        self.contracting_corner_sets = []
+        self.expanding_corner_sets = []
+
+
         self.transformation_corners = []  # Store corner positions
         self.current_corner = 0  # Track which corner we're setting
 
@@ -99,6 +103,10 @@ class ImageEditor:
 
     def calculate_iteration_corners(self):
         """Calculate corner positions for recursive transformations"""
+
+        self.contracting_corner_sets = []
+        self.expanding_corner_sets = []
+
         if len(self.transformation_corners) < 4:
             return [], []
         
@@ -126,9 +134,6 @@ class ImageEditor:
         inverse_coeffs = self.find_coeffs(self.transformation_corners, original_corners)
         print(f"Transform coefficients: {transform_coeffs}")
         print(f"Inverse coefficients: {inverse_coeffs}")
-        
-        contracting_corner_sets = []
-        expanding_corner_sets = []
         
         # Initialize both corner sets
         contracting_corners = original_corners.copy()
@@ -166,28 +171,28 @@ class ImageEditor:
             print(f"Next contracting corners: {next_contracting}")
             print(f"Next expanding corners: {next_expanding}")
             
-            contracting_corner_sets.append(next_contracting)
-            expanding_corner_sets.append(next_expanding)
+            self.contracting_corner_sets.append(next_contracting)
+            self.expanding_corner_sets.append(next_expanding)
             
             contracting_corners = next_contracting
             expanding_corners = next_expanding
             iteration += 1
         
-        print(f"\nFinal number of corner sets: {len(contracting_corner_sets)}")
-        return contracting_corner_sets, expanding_corner_sets
+        print(f"\nFinal number of corner sets: {len(self.contracting_corner_sets)}")
+        return self.contracting_corner_sets, self.expanding_corner_sets
 
-    def create_transformed_copies(self, contracting_corner_sets, expanding_corner_sets):
+    def create_transformed_copies(self):
         """Step 2: Create all transformed copies using the corner sets"""
         width, height = self.original_size
         original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
         transformed_images = []
         
         print("\nCreating transformed copies:")
-        print(f"Expanding sets: {len(expanding_corner_sets)}")
-        print(f"Contracting sets: {len(contracting_corner_sets)}")
+        print(f"Expanding sets: {len(self.expanding_corner_sets)}")
+        print(f"Contracting sets: {len(self.contracting_corner_sets)}")
         
         # Create expanding transformations (from largest to smallest)
-        for expanding_corners in reversed(expanding_corner_sets):
+        for expanding_corners in reversed(self.expanding_corner_sets):
             # Transform from original corners to expanded corners
             expanding_coeffs = self.find_coeffs(original_corners, expanding_corners)
             expanding_transformed = self.image.transform(
@@ -204,7 +209,7 @@ class ImageEditor:
         print("Added original image")
         
         # Create contracting transformations (from largest to smallest)
-        for contracting_corners in contracting_corner_sets:
+        for contracting_corners in self.contracting_corner_sets:
             # Transform from original corners to contracted corners
             contracting_coeffs = self.find_coeffs(original_corners, contracting_corners)
             contracting_transformed = self.image.transform(
@@ -246,10 +251,10 @@ class ImageEditor:
             
         try:
             # Step 1: Calculate all corner positions
-            contracting_corner_sets, expanding_corner_sets = self.calculate_iteration_corners()
+            self.contracting_corner_sets, self.expanding_corner_sets = self.calculate_iteration_corners()
             
             # Step 2: Create transformed copies
-            transformed_images = self.create_transformed_copies(contracting_corner_sets, expanding_corner_sets)
+            transformed_images = self.create_transformed_copies()
             
             # Step 3: Stack the images together
             self.stack_transformed_images(transformed_images)
@@ -326,6 +331,56 @@ class ImageEditor:
                     fill=color, outline=color
                 )
 
+            # Draw spiral curves if we have enough corners
+            if len(self.transformation_corners) == 4:
+                # Calculate corner sets and fit spirals
+                self.contracting_corner_sets, self.expanding_corner_sets = self.calculate_iteration_corners()
+                
+                # For each corner, create and draw its spiral
+                for corner_index in range(4):
+                    # Collect all positions for this corner
+                    corner_positions = []
+                    # Add expanding positions (reversed)
+                    for corners in reversed(self.expanding_corner_sets):
+                        corner_positions.append(corners[corner_index])
+                    # Add original corner
+                    corner_positions.append([(0, 0), (self.original_size[0], 0), 
+                                          (self.original_size[0], self.original_size[1]), 
+                                          (0, self.original_size[1])][corner_index])
+                    # Add contracting positions
+                    for corners in self.contracting_corner_sets:
+                        corner_positions.append(corners[corner_index])
+
+                    # Fit spiral curve
+                    curve = fit_spiral_curve(corner_positions)
+
+                    # Draw curve points
+                    points = []
+                    num_points = 100  # Number of points to draw
+                    for i in range(num_points):
+                        t = i / (num_points - 1)
+                        x, y = curve.get_point(t)
+                        
+                        # Convert to canvas coordinates
+                        canvas_x = (x * scale) + offset_x
+                        canvas_y = (y * scale) + offset_y
+                        points.append(canvas_x)
+                        points.append(canvas_y)
+
+                    # Draw the curve
+                    if len(points) >= 4:  # Need at least 2 points to draw
+                        self.canvas.create_line(points, fill="green", width=1)
+
+                    # Draw original points used for fitting
+                    for x, y in corner_positions:
+                        canvas_x = (x * scale) + offset_x
+                        canvas_y = (y * scale) + offset_y
+                        self.canvas.create_oval(
+                            canvas_x - 2, canvas_y - 2,
+                            canvas_x + 2, canvas_y + 2,
+                            fill="yellow", outline="yellow"
+                        )
+
     def save_image(self):
         if not self.output_image:
             print("No output image available to save.")
@@ -367,44 +422,38 @@ class ImageEditor:
 
         # Original corners (full image)
         original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
+        
+        # For each corner (0-3), create a spiral curve through its points
+        corner_curves = []
+        for corner_index in range(4):
+            # Collect all positions for this corner
+            corner_positions = []
+            # Add expanding positions (reversed to go from largest to smallest)
+            for corners in reversed(self.expanding_corner_sets):
+                corner_positions.append(corners[corner_index])
+            # Add original position
+            corner_positions.append(original_corners[corner_index])
+            # Add contracting positions
+            for corners in self.contracting_corner_sets:
+                corner_positions.append(corners[corner_index])
+            
+            # Fit a spiral curve through these points
+            # (We'll need to implement this curve fitting)
+            curve = fit_spiral_curve(corner_positions)
+            corner_curves.append(curve)
 
-        # Create external frames (full image corners to transformation corners)
+        # Create frames using points along the spiral curves
         external_frames = []
         for frame_num in range(num_frames):
             t = frame_num / num_frames
-            # Interpolate between original corners and transformation corners
+            
+            # Get current corner positions from the curves
             current_corners = []
-            for (ox, oy), (tx, ty) in zip(original_corners, self.transformation_corners):
-                current_x = ox + (tx - ox) * t
-                current_y = oy + (ty - oy) * t
-                current_corners.append((current_x, current_y))
-
-            # Create a copy of the output image
-            frame_image = self.output_image.copy()
-
-            # Calculate the perspective transform coefficients
-            # Transform from current corners back to original corners
-            coeffs = self.find_coeffs(original_corners, current_corners)
-
-            # Apply the perspective transformation
-            transformed_frame = frame_image.transform(
-                self.original_size,
-                Image.PERSPECTIVE,
-                coeffs,
-                Image.Resampling.BICUBIC
-            )
-
-            # Store the frame in memory
-            external_frames.append(transformed_frame)
-        
-        external_frames.reverse()
-
-        self.frames = external_frames
-        print(f"Created {len(self.frames)} combined frames")
-
-        if len(self.frames) == 0:
-            print("No valid frames were created. Cannot save animation.")
-            return
+            for curve in corner_curves:
+                current_corners.append(curve.get_point(t))
+            
+            # Create frame using these corner positions
+            # ... rest of frame creation code ...
 
     def save_apng(self, zoom_in=True):
         self.create_zoom_frames()
@@ -531,6 +580,79 @@ class ImageEditor:
         
         # Update the display
         self.update_output_image()
+
+
+def fit_spiral_curve(points):
+    """
+    Fit a logarithmic spiral to a set of points
+    points: list of (x,y) coordinates
+    returns: SpitalCurve object with parameters a, b
+    """
+    # Convert to polar coordinates relative to center point
+    # Use average point as center for better fitting
+    center_x = sum(x for x, y in points) / len(points)
+    center_y = sum(y for x, y in points) / len(points)
+    
+    # Convert to polar coordinates (r, θ)
+    polar_points = []
+    for x, y in points:
+        # Translate to origin
+        dx = x - center_x
+        dy = y - center_y
+        
+        # Calculate r and θ
+        r = math.sqrt(dx*dx + dy*dy)
+        theta = math.atan2(dy, dx)
+        
+        # Ensure θ increases continuously (unwrap)
+        if len(polar_points) > 0:
+            prev_theta = polar_points[-1][1]
+            while theta < prev_theta - math.pi:
+                theta += 2 * math.pi
+            while theta > prev_theta + math.pi:
+                theta -= 2 * math.pi
+                
+        polar_points.append((r, theta))
+    
+    # Linearize: ln(r) = ln(a) + bθ
+    X = np.array([theta for r, theta in polar_points])
+    Y = np.array([math.log(r) if r > 0 else float('-inf') for r, theta in polar_points])
+    
+    # Remove any infinite values
+    valid_indices = np.isfinite(Y)
+    X = X[valid_indices]
+    Y = Y[valid_indices]
+    
+    # Perform linear regression
+    A = np.vstack([X, np.ones(len(X))]).T
+    b, ln_a = np.linalg.lstsq(A, Y, rcond=None)[0]
+    
+    a = math.exp(ln_a)
+    
+    class SpiralCurve:
+        def __init__(self, a, b, center_x, center_y):
+            self.a = a
+            self.b = b
+            self.center_x = center_x
+            self.center_y = center_y
+            
+        def get_point(self, t):
+            """Get point along spiral at parameter t (0 to 1)"""
+            # Interpolate θ between min and max theta
+            min_theta = min(theta for r, theta in polar_points)
+            max_theta = max(theta for r, theta in polar_points)
+            theta = min_theta + t * (max_theta - min_theta)
+            
+            # Calculate r from spiral equation
+            r = self.a * math.exp(self.b * theta)
+            
+            # Convert back to Cartesian coordinates
+            x = self.center_x + r * math.cos(theta)
+            y = self.center_y + r * math.sin(theta)
+            
+            return (x, y)
+    
+    return SpiralCurve(a, b, center_x, center_y)
 
 
 if __name__ == "__main__":
