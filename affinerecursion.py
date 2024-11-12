@@ -282,6 +282,45 @@ class ImageEditor:
         res = np.dot(np.linalg.inv(A.T * A) * A.T, B)
         return np.array(res).reshape(8)
 
+    def interpolate_spiral_points(self, start_point, end_point, center_point, num_points=20):
+        """Interpolate points along a logarithmic spiral path"""
+        points = []
+        
+        # Convert to polar coordinates relative to center
+        def to_polar(point):
+            x = point[0] - center_point[0]
+            y = point[1] - center_point[1]
+            r = math.sqrt(x*x + y*y)
+            theta = math.atan2(y, x)
+            return r, theta
+        
+        # Convert from polar back to cartesian
+        def to_cartesian(r, theta):
+            x = center_point[0] + r * math.cos(theta)
+            y = center_point[1] + r * math.sin(theta)
+            return (x, y)
+        
+        # Get polar coordinates of start and end points
+        r1, theta1 = to_polar(start_point)
+        r2, theta2 = to_polar(end_point)
+        
+        # Unwrap theta2 to ensure we take the shorter path
+        while theta2 - theta1 > math.pi:
+            theta2 -= 2 * math.pi
+        while theta1 - theta2 > math.pi:
+            theta2 += 2 * math.pi
+        
+        # Calculate logarithmic spiral parameters
+        b = math.log(r2/r1) / (theta2 - theta1) if theta2 != theta1 else 0
+        a = r1 / math.exp(b * theta1)
+        
+        # Generate points along the spiral
+        for t in np.linspace(0, 1, num_points):
+            theta = theta1 + (theta2 - theta1) * t
+            r = a * math.exp(b * theta)
+            points.append(to_cartesian(r, theta))
+        
+        return points
 
     def display_output_image(self):
         if self.output_image:
@@ -331,45 +370,29 @@ class ImageEditor:
                     fill=color, outline=color
                 )
 
-            # Draw spiral curves if we have enough corners
             if len(self.transformation_corners) == 4:
                 # Calculate corner sets and fit spirals
                 self.contracting_corner_sets, self.expanding_corner_sets = self.calculate_iteration_corners()
                 
+                # Define colors for each corner's points
+                corner_colors = ['purple', 'orange', 'green', 'cyan']
+                
                 # For each corner, create and draw its spiral
                 for corner_index in range(4):
-                    # Collect all positions for this corner
+                    # Collect positions for this corner - only original and contracting
                     corner_positions = []
-                    # Add expanding positions (reversed)
-                    for corners in reversed(self.expanding_corner_sets):
-                        corner_positions.append(corners[corner_index])
-                    # Add original corner
+                    
+                    # Add original corner first
                     corner_positions.append([(0, 0), (self.original_size[0], 0), 
                                           (self.original_size[0], self.original_size[1]), 
                                           (0, self.original_size[1])][corner_index])
-                    # Add contracting positions
+                    
+                    # Add contracting positions in order (largest to smallest)
                     for corners in self.contracting_corner_sets:
                         corner_positions.append(corners[corner_index])
-
-                    # Fit spiral curve
-                    curve = fit_spiral_curve(corner_positions)
-
-                    # Draw curve points
-                    points = []
-                    num_points = 100  # Number of points to draw
-                    for i in range(num_points):
-                        t = i / (num_points - 1)
-                        x, y = curve.get_point(t)
-                        
-                        # Convert to canvas coordinates
-                        canvas_x = (x * scale) + offset_x
-                        canvas_y = (y * scale) + offset_y
-                        points.append(canvas_x)
-                        points.append(canvas_y)
-
-                    # Draw the curve
-                    if len(points) >= 4:  # Need at least 2 points to draw
-                        self.canvas.create_line(points, fill="green", width=1)
+                    
+                    # Get the convergence point (final point in contracting set)
+                    center_point = self.contracting_corner_sets[-1][corner_index]
 
                     # Draw original points used for fitting
                     for x, y in corner_positions:
@@ -378,8 +401,48 @@ class ImageEditor:
                         self.canvas.create_oval(
                             canvas_x - 2, canvas_y - 2,
                             canvas_x + 2, canvas_y + 2,
-                            fill="yellow", outline="yellow"
+                            fill=corner_colors[corner_index], 
+                            outline=corner_colors[corner_index]
                         )
+
+                    # Draw spiral using the convergence point as center
+                    width, height = self.original_size
+                    original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
+                    start_point = original_corners[corner_index]
+                    end_point = self.transformation_corners[corner_index]
+                    
+                    spiral_points = self.interpolate_spiral_points(
+                        start_point, 
+                        end_point, 
+                        center_point, 
+                        num_points=40
+                    )
+                    
+                    # Draw interpolated points
+                    prev_point = None
+                    for x, y in spiral_points:
+                        canvas_x = (x * scale) + offset_x
+                        canvas_y = (y * scale) + offset_y
+                        
+                        # Draw point
+                        self.canvas.create_oval(
+                            canvas_x - 1, canvas_y - 1,
+                            canvas_x + 1, canvas_y + 1,
+                            fill='yellow',
+                            outline='yellow'
+                        )
+                        
+                        # Draw line segment connecting points
+                        if prev_point:
+                            prev_x = (prev_point[0] * scale) + offset_x
+                            prev_y = (prev_point[1] * scale) + offset_y
+                            self.canvas.create_line(
+                                prev_x, prev_y,
+                                canvas_x, canvas_y,
+                                fill='yellow',
+                                width=1
+                            )
+                        prev_point = (x, y)
 
     def save_image(self):
         if not self.output_image:
@@ -417,43 +480,35 @@ class ImageEditor:
             print("Invalid frame count. Using default of 15.")
             num_frames = 15
 
-        # Get the original image dimensions
+        # Get original corners
         width, height = self.original_size
-
-        # Original corners (full image)
         original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
-        
-        # For each corner (0-3), create a spiral curve through its points
-        corner_curves = []
-        for corner_index in range(4):
-            # Collect all positions for this corner
-            corner_positions = []
-            # Add expanding positions (reversed to go from largest to smallest)
-            for corners in reversed(self.expanding_corner_sets):
-                corner_positions.append(corners[corner_index])
-            # Add original position
-            corner_positions.append(original_corners[corner_index])
-            # Add contracting positions
-            for corners in self.contracting_corner_sets:
-                corner_positions.append(corners[corner_index])
-            
-            # Fit a spiral curve through these points
-            # (We'll need to implement this curve fitting)
-            curve = fit_spiral_curve(corner_positions)
-            corner_curves.append(curve)
 
-        # Create frames using points along the spiral curves
-        external_frames = []
-        for frame_num in range(num_frames):
-            t = frame_num / num_frames
-            
-            # Get current corner positions from the curves
-            current_corners = []
-            for curve in corner_curves:
-                current_corners.append(curve.get_point(t))
-            
-            # Create frame using these corner positions
-            # ... rest of frame creation code ...
+        # Generate spiral paths for each corner using its own convergence point
+        corner_paths = []
+        for i in range(4):
+            center_point = self.contracting_corner_sets[-1][i]  # Use convergence point as center
+            spiral_points = self.interpolate_spiral_points(
+                original_corners[i],
+                self.transformation_corners[i],
+                center_point,
+                num_points=num_frames + 1  # Include end point
+            )
+            corner_paths.append(spiral_points[:-1])  # Exclude the last point here instead
+
+        # Create frame for each set of interpolated corners
+        for frame_idx in range(num_frames):
+            frame_corners = [path[frame_idx] for path in corner_paths]
+            frame_coeffs = self.find_coeffs(original_corners, frame_corners)
+            frame = self.output_image.transform(
+                self.original_size,
+                Image.PERSPECTIVE,
+                frame_coeffs,
+                Image.Resampling.BICUBIC
+            )
+            self.frames.append(frame)
+
+        print(f"Created {len(self.frames)} zoom frames")
 
     def save_apng(self, zoom_in=True):
         self.create_zoom_frames()
@@ -466,7 +521,7 @@ class ImageEditor:
             file_path = filedialog.asksaveasfilename(defaultextension=".png", filetypes=[("APNG Files", "*.png")])
             if file_path:
                 apng = APNG()
-                frame_list = reversed(self.frames) if zoom_in else self.frames
+                frame_list = self.frames if zoom_in else reversed(self.frames)
                 for frame_image in frame_list:
                     # Save the frame to a temporary file and append it to the APNG
                     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp_file:
@@ -497,7 +552,7 @@ class ImageEditor:
             if file_path:
                 # Use temporary files to store each frame
                 temp_files = []
-                frame_list = reversed(self.frames) if zoom_in else self.frames
+                frame_list = self.frames if zoom_in else reversed(self.frames)
                 for frame_image in frame_list:
                     temp_file = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
                     frame_image.save(temp_file.name)
@@ -580,80 +635,6 @@ class ImageEditor:
         
         # Update the display
         self.update_output_image()
-
-
-def fit_spiral_curve(points):
-    """
-    Fit a logarithmic spiral to a set of points
-    points: list of (x,y) coordinates
-    returns: SpitalCurve object with parameters a, b
-    """
-    # Convert to polar coordinates relative to center point
-    # Use average point as center for better fitting
-    center_x = sum(x for x, y in points) / len(points)
-    center_y = sum(y for x, y in points) / len(points)
-    
-    # Convert to polar coordinates (r, θ)
-    polar_points = []
-    for x, y in points:
-        # Translate to origin
-        dx = x - center_x
-        dy = y - center_y
-        
-        # Calculate r and θ
-        r = math.sqrt(dx*dx + dy*dy)
-        theta = math.atan2(dy, dx)
-        
-        # Ensure θ increases continuously (unwrap)
-        if len(polar_points) > 0:
-            prev_theta = polar_points[-1][1]
-            while theta < prev_theta - math.pi:
-                theta += 2 * math.pi
-            while theta > prev_theta + math.pi:
-                theta -= 2 * math.pi
-                
-        polar_points.append((r, theta))
-    
-    # Linearize: ln(r) = ln(a) + bθ
-    X = np.array([theta for r, theta in polar_points])
-    Y = np.array([math.log(r) if r > 0 else float('-inf') for r, theta in polar_points])
-    
-    # Remove any infinite values
-    valid_indices = np.isfinite(Y)
-    X = X[valid_indices]
-    Y = Y[valid_indices]
-    
-    # Perform linear regression
-    A = np.vstack([X, np.ones(len(X))]).T
-    b, ln_a = np.linalg.lstsq(A, Y, rcond=None)[0]
-    
-    a = math.exp(ln_a)
-    
-    class SpiralCurve:
-        def __init__(self, a, b, center_x, center_y):
-            self.a = a
-            self.b = b
-            self.center_x = center_x
-            self.center_y = center_y
-            
-        def get_point(self, t):
-            """Get point along spiral at parameter t (0 to 1)"""
-            # Interpolate θ between min and max theta
-            min_theta = min(theta for r, theta in polar_points)
-            max_theta = max(theta for r, theta in polar_points)
-            theta = min_theta + t * (max_theta - min_theta)
-            
-            # Calculate r from spiral equation
-            r = self.a * math.exp(self.b * theta)
-            
-            # Convert back to Cartesian coordinates
-            x = self.center_x + r * math.cos(theta)
-            y = self.center_y + r * math.sin(theta)
-            
-            return (x, y)
-    
-    return SpiralCurve(a, b, center_x, center_y)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
