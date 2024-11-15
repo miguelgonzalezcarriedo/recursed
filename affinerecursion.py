@@ -95,6 +95,14 @@ class ImageEditor:
         try:
             file_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp")])
             if file_path:
+                # Clear all cached data
+                self.frames.clear()
+                self.contracting_corner_sets.clear()
+                self.expanding_corner_sets.clear()
+                self.transformation_corners.clear()
+                self.current_corner = 0
+                
+                # Load new image
                 self.image = Image.open(file_path).convert("RGBA")
                 self.original_size = self.image.size
                 self.update_output_image()
@@ -149,7 +157,9 @@ class ImageEditor:
                 break
                 
             print(f"\nIteration {iteration + 1}:")
-            print(f"Contracting corners: {contracting_corners}")
+            # Convert coordinates to integers for printing
+            contracting_int = [(int(x), int(y)) for x, y in contracting_corners]
+            print(f"Contracting corners: {contracting_int}")
             print(f"Min distance: {min_distance:.2f}")
             
             # Calculate next contracting corners
@@ -168,8 +178,11 @@ class ImageEditor:
                 new_y = (inverse_coeffs[3] * x + inverse_coeffs[4] * y + inverse_coeffs[5]) / denominator
                 next_expanding.append((new_x, new_y))
             
-            print(f"Next contracting corners: {next_contracting}")
-            print(f"Next expanding corners: {next_expanding}")
+            # Convert coordinates to integers for printing
+            next_contracting_int = [(int(x), int(y)) for x, y in next_contracting]
+            next_expanding_int = [(int(x), int(y)) for x, y in next_expanding]
+            print(f"Next contracting corners: {next_contracting_int}")
+            print(f"Next expanding corners: {next_expanding_int}")
             
             self.contracting_corner_sets.append(next_contracting)
             self.expanding_corner_sets.append(next_expanding)
@@ -304,6 +317,10 @@ class ImageEditor:
         r1, theta1 = to_polar(start_point)
         r2, theta2 = to_polar(end_point)
         
+        # Handle case where start point is at center
+        if r1 < 0.0001:  # Small threshold to avoid division by zero
+            r1 = 0.0001
+        
         # Unwrap theta2 to ensure we take the shorter path
         while theta2 - theta1 > math.pi:
             theta2 -= 2 * math.pi
@@ -311,7 +328,14 @@ class ImageEditor:
             theta2 += 2 * math.pi
         
         # Calculate logarithmic spiral parameters
-        b = math.log(r2/r1) / (theta2 - theta1) if theta2 != theta1 else 0
+        if abs(theta2 - theta1) < 0.0001:  # If angles are too close
+            b = 0
+        else:
+            b = math.log(r2/r1) / (theta2 - theta1)
+        
+        # Limit b to prevent exp overflow
+        b = max(min(b, 10), -10)  # Limit b to reasonable range
+        
         a = r1 / math.exp(b * theta1)
         
         # Generate points along the spiral
@@ -458,10 +482,15 @@ class ImageEditor:
             print(f"Error saving image: {e}")
 
     def flip_stack(self):
-        if self.image_stack_on_top is True:
-            self.image_stack_on_top = False
-        else:
-            self.image_stack_on_top = True
+        # Clear all cached data
+        self.frames.clear()
+        self.contracting_corner_sets.clear()
+        self.expanding_corner_sets.clear()
+        
+        # Flip the stack order
+        self.image_stack_on_top = not self.image_stack_on_top
+        
+        # Update the image
         self.update_output_image()
 
 
@@ -470,45 +499,76 @@ class ImageEditor:
             print("No output image or insufficient corner positions.")
             return
 
-        # Clear previous frames
         self.frames.clear()
 
-        # Get number of frames from entry widget
         try:
             num_frames = int(self.frame_count_entry.get())
         except ValueError:
             print("Invalid frame count. Using default of 15.")
             num_frames = 15
 
-        # Get original corners
+        # Define original image corners
         width, height = self.original_size
         original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
 
-        # Generate spiral paths for each corner using its own convergence point
+        # Calculate a single stable center point
+        final_corners = self.contracting_corner_sets[-1]
+        center_x = sum(x for x, y in final_corners) / 4
+        center_y = sum(y for x, y in final_corners) / 4
+        stable_center = (center_x, center_y)
+
+        # Generate spiral paths
         corner_paths = []
         for i in range(4):
-            center_point = self.contracting_corner_sets[-1][i]  # Use convergence point as center
+            # Generate spiral points from original to transformed corners
             spiral_points = self.interpolate_spiral_points(
                 original_corners[i],
                 self.transformation_corners[i],
-                center_point,
-                num_points=num_frames + 1  # Include end point
+                stable_center,
+                num_points=num_frames + 1
             )
-            corner_paths.append(spiral_points[:-1])  # Exclude the last point here instead
+            # Generate spiral points from transformed to original corners
+            reverse_spiral_points = self.interpolate_spiral_points(
+                self.transformation_corners[i],
+                original_corners[i],
+                stable_center,
+                num_points=num_frames + 1
+            )
+            corner_paths.append((spiral_points, reverse_spiral_points))
 
-        # Create frame for each set of interpolated corners
-        for frame_idx in range(num_frames):
-            frame_corners = [path[frame_idx] for path in corner_paths]
-            frame_coeffs = self.find_coeffs(original_corners, frame_corners)
-            frame = self.output_image.transform(
+        # Create and combine frames in a single loop
+        for frame_idx in range(num_frames):  # Note: excluding last frame
+            frame_corners_bg = [path[0][frame_idx] for path in corner_paths]
+            frame_corners_fg = [path[1][frame_idx] for path in corner_paths]
+
+            # Create background frame
+            bg_coeffs = self.find_coeffs(original_corners, frame_corners_bg)
+            frame_bg = self.output_image.copy().transform(
                 self.original_size,
                 Image.PERSPECTIVE,
-                frame_coeffs,
+                bg_coeffs,
                 Image.Resampling.BICUBIC
             )
-            self.frames.append(frame)
 
-        print(f"Created {len(self.frames)} zoom frames")
+            # Create foreground frame
+            fg_coeffs = self.find_coeffs(frame_corners_fg, original_corners)
+            frame_fg = self.output_image.copy().transform(
+                self.original_size,
+                Image.PERSPECTIVE,
+                fg_coeffs,
+                Image.Resampling.BICUBIC
+            )
+
+            # Combine frames
+            combined_frame = Image.new("RGBA", self.original_size, (255, 255, 255, 0))
+            combined_frame.paste(frame_bg, (0, 0), frame_bg)
+            combined_frame.paste(frame_fg, (0, 0), frame_fg)
+            
+            self.frames.append(combined_frame)
+            # Convert coordinates to integers for printing
+            frame_corners_bg_int = [(int(x), int(y)) for x, y in frame_corners_bg]
+            frame_corners_fg_int = [(int(x), int(y)) for x, y in frame_corners_fg]
+            print(f"Created frame {frame_idx + 1} with background corners: {frame_corners_bg_int} and foreground corners: {frame_corners_fg_int}")
 
     def save_apng(self, zoom_in=True):
         self.create_zoom_frames()
@@ -594,6 +654,11 @@ class ImageEditor:
         """Handle mouse clicks on the canvas"""
         if not self.image:
             return
+        
+        # Clear all cached data
+        self.frames.clear()
+        self.contracting_corner_sets.clear()
+        self.expanding_corner_sets.clear()
         
         # Get click coordinates relative to the canvas
         canvas_x = event.x
