@@ -295,57 +295,6 @@ class ImageEditor:
         res = np.dot(np.linalg.inv(A.T * A) * A.T, B)
         return np.array(res).reshape(8)
 
-    def interpolate_spiral_points(self, start_point, end_point, center_point, num_points=20):
-        """Interpolate points along a logarithmic spiral path"""
-        points = []
-        
-        # Convert to polar coordinates relative to center
-        def to_polar(point):
-            x = point[0] - center_point[0]
-            y = point[1] - center_point[1]
-            r = math.sqrt(x*x + y*y)
-            theta = math.atan2(y, x)
-            return r, theta
-        
-        # Convert from polar back to cartesian
-        def to_cartesian(r, theta):
-            x = center_point[0] + r * math.cos(theta)
-            y = center_point[1] + r * math.sin(theta)
-            return (x, y)
-        
-        # Get polar coordinates of start and end points
-        r1, theta1 = to_polar(start_point)
-        r2, theta2 = to_polar(end_point)
-        
-        # Handle case where start point is at center
-        if r1 < 0.0001:  # Small threshold to avoid division by zero
-            r1 = 0.0001
-        
-        # Unwrap theta2 to ensure we take the shorter path
-        while theta2 - theta1 > math.pi:
-            theta2 -= 2 * math.pi
-        while theta1 - theta2 > math.pi:
-            theta2 += 2 * math.pi
-        
-        # Calculate logarithmic spiral parameters
-        if abs(theta2 - theta1) < 0.0001:  # If angles are too close
-            b = 0
-        else:
-            b = math.log(r2/r1) / (theta2 - theta1)
-        
-        # Limit b to prevent exp overflow
-        b = max(min(b, 10), -10)  # Limit b to reasonable range
-        
-        a = r1 / math.exp(b * theta1)
-        
-        # Generate points along the spiral
-        for t in np.linspace(0, 1, num_points):
-            theta = theta1 + (theta2 - theta1) * t
-            r = a * math.exp(b * theta)
-            points.append(to_cartesian(r, theta))
-        
-        return points
-
     def display_output_image(self):
         if self.output_image:
             # Resize the output image to fit the canvas
@@ -429,45 +378,6 @@ class ImageEditor:
                             outline=corner_colors[corner_index]
                         )
 
-                    # Draw spiral using the convergence point as center
-                    width, height = self.original_size
-                    original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
-                    start_point = original_corners[corner_index]
-                    end_point = self.transformation_corners[corner_index]
-                    
-                    spiral_points = self.interpolate_spiral_points(
-                        start_point, 
-                        end_point, 
-                        center_point, 
-                        num_points=40
-                    )
-                    
-                    # Draw interpolated points
-                    prev_point = None
-                    for x, y in spiral_points:
-                        canvas_x = (x * scale) + offset_x
-                        canvas_y = (y * scale) + offset_y
-                        
-                        # Draw point
-                        self.canvas.create_oval(
-                            canvas_x - 1, canvas_y - 1,
-                            canvas_x + 1, canvas_y + 1,
-                            fill='yellow',
-                            outline='yellow'
-                        )
-                        
-                        # Draw line segment connecting points
-                        if prev_point:
-                            prev_x = (prev_point[0] * scale) + offset_x
-                            prev_y = (prev_point[1] * scale) + offset_y
-                            self.canvas.create_line(
-                                prev_x, prev_y,
-                                canvas_x, canvas_y,
-                                fill='yellow',
-                                width=1
-                            )
-                        prev_point = (x, y)
-
     def save_image(self):
         if not self.output_image:
             print("No output image available to save.")
@@ -493,82 +403,125 @@ class ImageEditor:
         # Update the image
         self.update_output_image()
 
-
     def create_zoom_frames(self):
-        if not self.output_image or len(self.transformation_corners) < 4:
-            print("No output image or insufficient corner positions.")
+        """Create frames by applying increasing powers of the nth root transformation to the original image"""
+        self.frames = []
+        
+        if not self.image or len(self.transformation_corners) < 4:
             return
 
-        self.frames.clear()
-
         try:
-            num_frames = int(self.frame_count_entry.get())
-        except ValueError:
-            print("Invalid frame count. Using default of 15.")
-            num_frames = 15
+            try:
+                num_frames = int(self.frame_count_entry.get())
+            except ValueError:
+                num_frames = 15
 
-        # Define original image corners
-        width, height = self.original_size
-        original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
-
-        # Calculate a single stable center point
-        final_corners = self.contracting_corner_sets[-1]
-        center_x = sum(x for x, y in final_corners) / 4
-        center_y = sum(y for x, y in final_corners) / 4
-        stable_center = (center_x, center_y)
-
-        # Generate spiral paths
-        corner_paths = []
-        for i in range(4):
-            # Generate spiral points from original to transformed corners
-            spiral_points = self.interpolate_spiral_points(
-                original_corners[i],
-                self.transformation_corners[i],
-                stable_center,
-                num_points=num_frames + 1
-            )
-            # Generate spiral points from transformed to original corners
-            reverse_spiral_points = self.interpolate_spiral_points(
-                self.transformation_corners[i],
-                original_corners[i],
-                stable_center,
-                num_points=num_frames + 1
-            )
-            corner_paths.append((spiral_points, reverse_spiral_points))
-
-        # Create and combine frames in a single loop
-        for frame_idx in range(num_frames):  # Note: excluding last frame
-            frame_corners_bg = [path[0][frame_idx] for path in corner_paths]
-            frame_corners_fg = [path[1][frame_idx] for path in corner_paths]
-
-            # Create background frame
-            bg_coeffs = self.find_coeffs(original_corners, frame_corners_bg)
-            frame_bg = self.output_image.copy().transform(
-                self.original_size,
-                Image.PERSPECTIVE,
-                bg_coeffs,
-                Image.Resampling.BICUBIC
-            )
-
-            # Create foreground frame
-            fg_coeffs = self.find_coeffs(frame_corners_fg, original_corners)
-            frame_fg = self.output_image.copy().transform(
-                self.original_size,
-                Image.PERSPECTIVE,
-                fg_coeffs,
-                Image.Resampling.BICUBIC
-            )
-
-            # Combine frames
-            combined_frame = Image.new("RGBA", self.original_size, (255, 255, 255, 0))
-            combined_frame.paste(frame_bg, (0, 0), frame_bg)
-            combined_frame.paste(frame_fg, (0, 0), frame_fg)
+            width, height = self.original_size
+            original_corners = [(0, 0), (width, 0), (width, height), (0, height)]
             
-            self.frames.append(combined_frame)
-            # Convert coordinates to integers for printing
-            frame_corners_bg_int = [(int(x), int(y)) for x, y in frame_corners_bg]
-            frame_corners_fg_int = [(int(x), int(y)) for x, y in frame_corners_fg]
-            print(f"Created frame {frame_idx + 1} with background corners: {frame_corners_bg_int} and foreground corners: {frame_corners_fg_int}")
+            # Get coefficients for both directions
+            forward_coeffs = self.find_coeffs(original_corners, self.transformation_corners)
+            reverse_coeffs = self.find_coeffs(self.transformation_corners, original_corners)
+            
+            # Convert coefficients to 3x3 homography matrices
+            H_forward = np.array([
+                [forward_coeffs[0], forward_coeffs[1], forward_coeffs[2]],
+                [forward_coeffs[3], forward_coeffs[4], forward_coeffs[5]],
+                [forward_coeffs[6], forward_coeffs[7], 1.0]
+            ])
+            
+            H_reverse = np.array([
+                [reverse_coeffs[0], reverse_coeffs[1], reverse_coeffs[2]],
+                [reverse_coeffs[3], reverse_coeffs[4], reverse_coeffs[5]],
+                [reverse_coeffs[6], reverse_coeffs[7], 1.0]
+            ])
+            
+            # Calculate eigendecompositions
+            forward_eigenvalues, forward_eigenvectors = np.linalg.eig(H_forward)
+            reverse_eigenvalues, reverse_eigenvectors = np.linalg.eig(H_reverse)
+            
+            def stable_nth_root(z, n, k):
+                r = np.abs(z)
+                theta = np.angle(z)
+                if theta > np.pi:
+                    theta -= 2 * np.pi
+                elif theta < -np.pi:
+                    theta += 2 * np.pi
+                root_r = r ** (k/n)
+                root_theta = (theta * k) / n
+                return root_r * np.exp(1j * root_theta)
+            
+            # First frame is the original image
+            self.frames.append(self.output_image.copy())
+            
+            forward_frames = []
+            reverse_frames = []
+
+            # For each frame, create both transformations
+            for k in range(1, num_frames):
+                # Forward transformation
+                power_k_eigenvalues = np.array([
+                    stable_nth_root(ev, num_frames, k) for ev in forward_eigenvalues
+                ])
+                idx = np.argsort(np.abs(power_k_eigenvalues))
+                power_k_eigenvalues = power_k_eigenvalues[idx]
+                sorted_eigenvectors = forward_eigenvectors[:, idx]
+                D_k = np.diag(power_k_eigenvalues)
+                H_k = sorted_eigenvectors @ D_k @ np.linalg.inv(sorted_eigenvectors)
+                H_k = np.real(H_k)
+                H_k = H_k / H_k[2,2]
+                forward_coeffs = [
+                    H_k[0,0], H_k[0,1], H_k[0,2],
+                    H_k[1,0], H_k[1,1], H_k[1,2],
+                    H_k[2,0], H_k[2,1]
+                ]
+                
+                # Reverse transformation
+                power_k_eigenvalues = np.array([
+                    stable_nth_root(ev, num_frames, k) for ev in reverse_eigenvalues
+                ])
+                idx = np.argsort(np.abs(power_k_eigenvalues))
+                power_k_eigenvalues = power_k_eigenvalues[idx]
+                sorted_eigenvectors = reverse_eigenvectors[:, idx]
+                D_k = np.diag(power_k_eigenvalues)
+                H_k = sorted_eigenvectors @ D_k @ np.linalg.inv(sorted_eigenvectors)
+                H_k = np.real(H_k)
+                H_k = H_k / H_k[2,2]
+                reverse_coeffs = [
+                    H_k[0,0], H_k[0,1], H_k[0,2],
+                    H_k[1,0], H_k[1,1], H_k[1,2],
+                    H_k[2,0], H_k[2,1]
+                ]
+                
+                # Create both transformed images
+                forward_frames.append(self.output_image.transform(
+                    self.original_size,
+                    Image.PERSPECTIVE,
+                    forward_coeffs,
+                    Image.Resampling.BICUBIC
+                ))
+                
+                reverse_frames.append(self.output_image.transform(
+                    self.original_size,
+                    Image.PERSPECTIVE,
+                    reverse_coeffs,
+                    Image.Resampling.BICUBIC
+                ))
+            
+            # Reverse the reverse frames for proper sequence
+            reverse_frames.reverse()
+            
+            # Combine frames
+            for i in range(len(forward_frames)):
+                # Combine the frames
+                combined_frame = Image.new("RGBA", self.original_size, (0, 0, 0, 0))
+                combined_frame.paste(forward_frames[i], (0, 0), forward_frames[i])
+                combined_frame.paste(reverse_frames[i], (0, 0), reverse_frames[i])
+                
+                self.frames.append(combined_frame)
+                
+        except Exception as e:
+            print(f"Error creating zoom frames: {e}")
 
     def save_apng(self, zoom_in=True):
         self.create_zoom_frames()
