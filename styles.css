@@ -145,6 +145,11 @@ footer {
     color: #666;
     font-size: 1.2em;
     pointer-events: none;
+    transition: all 0.3s ease;
+}
+
+.upload-text.loading {
+    color: #4CAF50;
 }
 
 .canvas-container.drag-over {
@@ -152,9 +157,16 @@ footer {
     background-color: rgba(76, 175, 80, 0.1);
 }
 
+/* Add loading animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
 .upload-text.loading {
-    color: #999;
-    font-style: italic;
+    animation: pulse 1.5s infinite;
+    color: #4CAF50;
 }
 
 .previews-container {
