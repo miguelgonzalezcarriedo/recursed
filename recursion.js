@@ -425,8 +425,9 @@ class ImageEditor {
                 return;
             }
 
-            // Clear only frames
+            // Clear frames and transformation corners
             this.frames = [];
+            this.transformationCorners = [];
 
             // Load the image
             const reader = new FileReader();
@@ -458,6 +459,23 @@ class ImageEditor {
                                 canvas: initialCanvas,
                                 ctx: ctx
                             };
+
+                            // Set default transformation corners based on image size
+                            const padding = 20;  // Increased padding for better visibility
+                            const width = this.originalSize[0];
+                            const height = this.originalSize[1];
+                            
+                            // Calculate corner positions to maintain aspect ratio and stay within bounds
+                            const cornerSize = Math.min(width, height) * 0.3;  // Use 30% of the smaller dimension
+                            const centerX = width / 2;
+                            const centerY = height / 2;
+                            
+                            this.transformationCorners = [
+                                [centerX - cornerSize + padding, centerY - cornerSize + padding],
+                                [centerX + cornerSize - padding, centerY - cornerSize + padding],
+                                [centerX + cornerSize - padding, centerY + cornerSize - padding],
+                                [centerX - cornerSize + padding, centerY + cornerSize - padding]
+                            ];
                             
                             this.updateOutputImage();
                             
