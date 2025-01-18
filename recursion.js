@@ -230,6 +230,7 @@ class ImageEditor {
         this.expandingCornerSets = [];
 
         if (this.transformationCorners.length < 4) {
+            console.log('Not enough corners for transformation.');
             return [[], []];
         }
 
@@ -237,9 +238,15 @@ class ImageEditor {
         const [width, height] = this.originalSize;
         const originalCorners = [[0, 0], [width, 0], [width, height], [0, height]];
 
+        // Sort transformation corners to match original corners order
+        const sortedTransformCorners = this.sortCorners(this.transformationCorners);
+
         // Get transformation coefficients
-        const H = this.findCoeffs(originalCorners, this.transformationCorners);
-        const Hinv = this.findCoeffs(this.transformationCorners, originalCorners);
+        const H = this.findCoeffs(originalCorners, sortedTransformCorners);
+        const Hinv = this.findCoeffs(sortedTransformCorners, originalCorners);
+
+        console.log('Transformation Coefficients:', H);
+        console.log('Inverse Transformation Coefficients:', Hinv);
 
         // Helper function to apply transformation
         const applyTransform = (corners, coeffs) => {
@@ -278,8 +285,13 @@ class ImageEditor {
             const nextContracting = applyTransform(contractingCorners, H);
             const nextExpanding = applyTransform(expandingCorners, Hinv);
 
+            console.log(`Iteration ${i + 1}:`);
+            console.log('Contracting Corners:', nextContracting);
+            console.log('Expanding Corners:', nextExpanding);
+
             // Check minimum distance for contracting corners
             if (minDistance(nextContracting) < minDistanceThreshold) {
+                console.log('Minimum distance threshold reached. Stopping iterations.');
                 break;
             }
 
@@ -300,6 +312,8 @@ class ImageEditor {
         const originalCorners = [[0, 0], [width, 0], [width, height], [0, height]];
         const transformedImages = [];
 
+        console.log('Creating transformed copies...');
+
         // Create base canvas from original image
         const baseCanvas = document.createElement('canvas');
         baseCanvas.width = width;
@@ -311,6 +325,7 @@ class ImageEditor {
         // Create expanding transformations (from largest to smallest)
         for (const expandingCorners of [...this.expandingCornerSets].reverse()) {
             const coeffs = this.findCoeffs(originalCorners, expandingCorners);
+            console.log('Expanding Coefficients:', coeffs);
             
             const canvas = document.createElement('canvas');
             canvas.width = width;
@@ -349,6 +364,7 @@ class ImageEditor {
         // Create contracting transformations (from largest to smallest)
         for (const contractingCorners of this.contractingCornerSets) {
             const coeffs = this.findCoeffs(originalCorners, contractingCorners);
+            console.log('Contracting Coefficients:', coeffs);
             
             const canvas = document.createElement('canvas');
             canvas.width = width;
@@ -381,6 +397,7 @@ class ImageEditor {
             transformedImages.push(canvas);
         }
 
+        console.log('Total transformed images created:', transformedImages.length);
         return transformedImages;
     }
 
@@ -434,12 +451,33 @@ class ImageEditor {
             reader.onload = (event) => {
                 const img = new Image();
                 img.onload = () => {
-                    // Convert to PNG using a canvas
+                    // Calculate new dimensions (max 1200px on longest side)
+                    const MAX_SIZE = 1200;
+                    let width = img.width;
+                    let height = img.height;
+                    
+                    if (width > MAX_SIZE || height > MAX_SIZE) {
+                        if (width > height) {
+                            height = Math.round((height * MAX_SIZE) / width);
+                            width = MAX_SIZE;
+                        } else {
+                            width = Math.round((width * MAX_SIZE) / height);
+                            height = MAX_SIZE;
+                        }
+                    }
+
+                    // Create resizing canvas
                     const conversionCanvas = document.createElement('canvas');
-                    conversionCanvas.width = img.width;
-                    conversionCanvas.height = img.height;
+                    conversionCanvas.width = width;
+                    conversionCanvas.height = height;
                     const ctx = conversionCanvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
+                    
+                    // Enable image smoothing for better quality
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    
+                    // Draw and resize image
+                    ctx.drawImage(img, 0, 0, width, height);
 
                     // Convert to PNG data URL
                     conversionCanvas.toBlob((blob) => {
@@ -447,12 +485,12 @@ class ImageEditor {
                         const pngImage = new Image();
                         pngImage.onload = () => {
                             this.image = pngImage;
-                            this.originalSize = [pngImage.width, pngImage.height];
-                            
+                            this.originalSize = [width, height];
+                    
                             // Create initial canvas from loaded image
                             const initialCanvas = document.createElement('canvas');
-                            initialCanvas.width = this.originalSize[0];
-                            initialCanvas.height = this.originalSize[1];
+                            initialCanvas.width = width;
+                            initialCanvas.height = height;
                             const ctx = initialCanvas.getContext('2d');
                             ctx.drawImage(pngImage, 0, 0);
                             this.outputImage = {
@@ -461,12 +499,8 @@ class ImageEditor {
                             };
 
                             // Set default transformation corners based on image size
-                            const padding = 20;  // Increased padding for better visibility
-                            const width = this.originalSize[0];
-                            const height = this.originalSize[1];
-                            
-                            // Calculate corner positions to maintain aspect ratio and stay within bounds
-                            const cornerSize = Math.min(width, height) * 0.3;  // Use 30% of the smaller dimension
+                            const padding = 20;
+                            const cornerSize = Math.min(width, height) * 0.3;
                             const centerX = width / 2;
                             const centerY = height / 2;
                             
@@ -476,7 +510,7 @@ class ImageEditor {
                                 [centerX + cornerSize - padding, centerY + cornerSize - padding],
                                 [centerX - cornerSize + padding, centerY + cornerSize - padding]
                             ];
-                            
+                    
                             this.updateOutputImage();
                             
                             // Add canvas resize handler after image is loaded
@@ -497,7 +531,7 @@ class ImageEditor {
                             URL.revokeObjectURL(pngUrl);
                         };
                         pngImage.src = pngUrl;
-                    }, 'image/png', 1.0);  // Convert to PNG with maximum quality
+                    }, 'image/png', 1.0);
                 };
                 img.onerror = () => {
                     alert('Error loading image. Please try another file.');
@@ -598,8 +632,23 @@ class ImageEditor {
         }
     }
 
+    // Helper function to sort corners in clockwise order starting from top-left
+    sortCorners(corners) {
+        // Find center point
+        const center = corners.reduce(
+            ([sumX, sumY], [x, y]) => [sumX + x/4, sumY + y/4],
+            [0, 0]
+        );
+
+        // Sort corners based on angle from center
+        return corners.slice().sort((a, b) => {
+            const angleA = Math.atan2(a[1] - center[1], a[0] - center[0]);
+            const angleB = Math.atan2(b[1] - center[1], b[0] - center[0]);
+            return angleA - angleB;
+        });
+    }
+
     createZoomFrames() {
-        // Clear existing frames
         this.frames = [];
 
         if (!this.image || this.transformationCorners.length < 4) {
@@ -607,126 +656,127 @@ class ImageEditor {
         }
 
         try {
-        const numFrames = parseInt(this.frameCountInput.value) || 15;
+            const numFrames = parseInt(this.frameCountInput.value) || 15;
             const [width, height] = this.originalSize;
             const originalCorners = [[0, 0], [width, 0], [width, height], [0, height]];
 
-            // Get forward and reverse transformations
-            const forwardCoeffs = this.findCoeffs(originalCorners, this.transformationCorners);
-            const reverseCoeffs = this.findCoeffs(this.transformationCorners, originalCorners);
+            // Sort transformation corners to match original corners order
+            const sortedTransformCorners = this.sortCorners(this.transformationCorners);
 
-            // Convert to matrices for eigenvalue decomposition
+            // Get coefficients for both directions
+            const forwardCoeffs = this.findCoeffs(originalCorners, sortedTransformCorners);
+            const reverseCoeffs = this.findCoeffs(sortedTransformCorners, originalCorners);
+
+            // Convert coefficients to 3x3 homography matrices
             const H_forward = [
                 [forwardCoeffs[0], forwardCoeffs[1], forwardCoeffs[2]],
                 [forwardCoeffs[3], forwardCoeffs[4], forwardCoeffs[5]],
-                [forwardCoeffs[6], forwardCoeffs[7], 1]
+                [forwardCoeffs[6], forwardCoeffs[7], 1.0]
             ];
 
             const H_reverse = [
                 [reverseCoeffs[0], reverseCoeffs[1], reverseCoeffs[2]],
                 [reverseCoeffs[3], reverseCoeffs[4], reverseCoeffs[5]],
-                [reverseCoeffs[6], reverseCoeffs[7], 1]
+                [reverseCoeffs[6], reverseCoeffs[7], 1.0]
             ];
 
             // Calculate eigendecompositions
             const forwardEig = numeric.eig(H_forward);
             const reverseEig = numeric.eig(H_reverse);
 
+            // Helper function to calculate stable nth root of complex number
+            const stableNthRoot = (re, im, n, k) => {
+                const r = Math.sqrt(re * re + im * im);
+                let theta = Math.atan2(im, re);
+                if (theta > Math.PI) theta -= 2 * Math.PI;
+                else if (theta < -Math.PI) theta += 2 * Math.PI;
+                const rootR = Math.pow(r, k/n);
+                const rootTheta = (theta * k) / n;
+                return {
+                    re: rootR * Math.cos(rootTheta),
+                    im: rootR * Math.sin(rootTheta)
+                };
+            };
+
             // First frame is the output image
-        const firstFrame = document.createElement('canvas');
+            const firstFrame = document.createElement('canvas');
             firstFrame.width = width;
             firstFrame.height = height;
             const firstCtx = firstFrame.getContext('2d');
             firstCtx.drawImage(this.outputImage.canvas, 0, 0);
-        this.frames.push(firstFrame);
+            this.frames.push(firstFrame);
 
-            // Create forward and reverse frames separately
             const forwardFrames = [];
             const reverseFrames = [];
 
-            // For each frame, calculate the nth root of the transformation
+            // For each frame, create both transformations
             for (let k = 1; k < numFrames; k++) {
-                // Calculate k/n power of eigenvalues for forward transform
+                // Forward transformation
                 const powerK = forwardEig.lambda.x.map((re, i) => {
                     const im = forwardEig.lambda.y ? forwardEig.lambda.y[i] : 0;
-                    const r = Math.sqrt(re * re + im * im);
-                    const theta = Math.atan2(im, re);
-                    const power = k / numFrames;
-                    const rootR = Math.pow(r, power);
-                    const rootTheta = theta * power;
-                    return {
-                        re: rootR * Math.cos(rootTheta),
-                        im: rootR * Math.sin(rootTheta)
-                    };
+                    return stableNthRoot(re, im, numFrames, k);
                 });
 
-                // Sort eigenvalues and eigenvectors
+                // Sort eigenvalues by magnitude
                 const magnitudes = powerK.map(z => Math.sqrt(z.re * z.re + z.im * z.im));
                 const indices = magnitudes.map((_, i) => i).sort((a, b) => magnitudes[a] - magnitudes[b]);
                 
-                // Create diagonal matrix with sorted eigenvalues
-                const D = numeric.identity(3);
-                indices.forEach((idx, i) => {
-                    D[i][i] = powerK[idx].re;
-                });
+                // Sort eigenvalues and eigenvectors
+                const sortedPowerK = indices.map(i => powerK[i]);
+                const sortedEigenvectors = numeric.transpose(indices.map(i => forwardEig.E.x.map(row => row[i])));
 
-                // Sort eigenvectors
-                const V = numeric.transpose(indices.map(i => forwardEig.E.x.map(row => row[i])));
-                const Vinv = numeric.inv(V);
+                // Create diagonal matrix with complex eigenvalues
+                const D = numeric.rep([3, 3], 0);
+                for (let i = 0; i < 3; i++) {
+                    D[i][i] = sortedPowerK[i].re;
+                }
 
                 // Calculate transformation matrix
-                let H = numeric.dot(numeric.dot(V, D), Vinv);
+                const Vinv = numeric.inv(sortedEigenvectors);
+                let H = numeric.dot(numeric.dot(sortedEigenvectors, D), Vinv);
+                
+                // Take real part and normalize
+                H = H.map(row => row.map(x => typeof x === 'object' ? x.re : x));
                 const scale = H[2][2];
                 H = H.map(row => row.map(x => x / scale));
 
-                // Convert to coefficients
                 const coeffs = [
                     H[0][0], H[0][1], H[0][2],
                     H[1][0], H[1][1], H[1][2],
                     H[2][0], H[2][1]
                 ];
 
-                // Calculate k/n power of eigenvalues for reverse transform
+                // Reverse transformation
                 const reversePowerK = reverseEig.lambda.x.map((re, i) => {
                     const im = reverseEig.lambda.y ? reverseEig.lambda.y[i] : 0;
-                    const r = Math.sqrt(re * re + im * im);
-                    const theta = Math.atan2(im, re);
-                    const power = k / numFrames;
-                    const rootR = Math.pow(r, power);
-                    const rootTheta = theta * power;
-                    return {
-                        re: rootR * Math.cos(rootTheta),
-                        im: rootR * Math.sin(rootTheta)
-                    };
+                    return stableNthRoot(re, im, numFrames, k);
                 });
 
-                // Sort eigenvalues and eigenvectors for reverse transform
                 const reverseMagnitudes = reversePowerK.map(z => Math.sqrt(z.re * z.re + z.im * z.im));
                 const reverseIndices = reverseMagnitudes.map((_, i) => i).sort((a, b) => reverseMagnitudes[a] - reverseMagnitudes[b]);
                 
-                // Create diagonal matrix with sorted eigenvalues for reverse transform
-                const reverseD = numeric.identity(3);
-                reverseIndices.forEach((idx, i) => {
-                    reverseD[i][i] = reversePowerK[idx].re;
-                });
+                const sortedReversePowerK = reverseIndices.map(i => reversePowerK[i]);
+                const sortedReverseEigenvectors = numeric.transpose(reverseIndices.map(i => reverseEig.E.x.map(row => row[i])));
 
-                // Sort eigenvectors for reverse transform
-                const reverseV = numeric.transpose(reverseIndices.map(i => reverseEig.E.x.map(row => row[i])));
-                const reverseVinv = numeric.inv(reverseV);
+                const reverseD = numeric.rep([3, 3], 0);
+                for (let i = 0; i < 3; i++) {
+                    reverseD[i][i] = sortedReversePowerK[i].re;
+                }
 
-                // Calculate reverse transformation matrix
-                let reverseH = numeric.dot(numeric.dot(reverseV, reverseD), reverseVinv);
+                const reverseVinv = numeric.inv(sortedReverseEigenvectors);
+                let reverseH = numeric.dot(numeric.dot(sortedReverseEigenvectors, reverseD), reverseVinv);
+                
+                reverseH = reverseH.map(row => row.map(x => typeof x === 'object' ? x.re : x));
                 const reverseScale = reverseH[2][2];
                 reverseH = reverseH.map(row => row.map(x => x / reverseScale));
 
-                // Convert to coefficients for reverse transform
                 const rCoeffs = [
                     reverseH[0][0], reverseH[0][1], reverseH[0][2],
                     reverseH[1][0], reverseH[1][1], reverseH[1][2],
                     reverseH[2][0], reverseH[2][1]
                 ];
 
-                // Create separate canvases for forward and reverse
+                // Create transformed images
                 const forwardCanvas = document.createElement('canvas');
                 forwardCanvas.width = width;
                 forwardCanvas.height = height;
@@ -744,33 +794,33 @@ class ImageEditor {
                 reverseFrames.push(reverseCanvas);
             }
 
-            // Combine forward and reverse frames
+            // Reverse the reverse frames for proper sequence
+            reverseFrames.reverse();
+
+            // Combine frames
             for (let i = 0; i < forwardFrames.length; i++) {
                 const combinedFrame = document.createElement('canvas');
                 combinedFrame.width = width;
                 combinedFrame.height = height;
                 const ctx = combinedFrame.getContext('2d');
+                ctx.clearRect(0, 0, width, height);
 
-                // Get the corresponding reverse frame from the opposite end
-                const reverseFrame = reverseFrames[reverseFrames.length - 1 - i];
-
-                // Stack the transformations according to imageStackOnTop
                 if (this.imageStackOnTop) {
-                    ctx.drawImage(forwardFrames[i], 0, 0);  // Forward on bottom
-                    ctx.drawImage(reverseFrame, 0, 0);      // Reverse on top
+                    ctx.drawImage(forwardFrames[i], 0, 0);
+                    ctx.drawImage(reverseFrames[i], 0, 0);
                 } else {
-                    ctx.drawImage(reverseFrame, 0, 0);      // Reverse on bottom
-                    ctx.drawImage(forwardFrames[i], 0, 0);  // Forward on top
+                    ctx.drawImage(reverseFrames[i], 0, 0);
+                    ctx.drawImage(forwardFrames[i], 0, 0);
                 }
 
                 this.frames.push(combinedFrame);
             }
 
         } catch (e) {
-            console.error("Error creating zoom frames:", e);
+            console.error('Error creating zoom frames:', e);
+            console.error(e.stack);
         }
 
-        // After frames are created, update preview and favicon
         this.previewAnimation();
         this.animateFavicon();
     }
@@ -1004,7 +1054,7 @@ class ImageEditor {
         if (this.transformationCorners.length >= 2) {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2;
-            ctx.beginPath();
+                    ctx.beginPath();
             
             // Draw lines connecting the dots in order
             const corners = this.transformationCorners;
@@ -1022,11 +1072,11 @@ class ImageEditor {
         }
 
         // Draw corner dots on top
-        ctx.fillStyle = 'red';
+            ctx.fillStyle = 'red';
         this.transformationCorners.forEach(([x, y]) => {
-            ctx.beginPath();
+                ctx.beginPath();
             ctx.arc(x, y, 8, 0, 2 * Math.PI);
-            ctx.fill();
+                ctx.fill();
         });
     }
 
@@ -1044,6 +1094,9 @@ class ImageEditor {
         // Ensure coordinates stay within image bounds with padding
         const boundedX = Math.max(padding, Math.min(imageX, this.originalSize[0] - padding));
         const boundedY = Math.max(padding, Math.min(imageY, this.originalSize[1] - padding));
+
+        console.log(`User selected coordinates: (${boundedX}, ${boundedY})`);
+        console.log(`Image dimensions: ${this.originalSize[0]}x${this.originalSize[1]}`);
 
         // Only add new points if we have less than 4
         if (this.transformationCorners.length < 4) {
@@ -1168,6 +1221,7 @@ class ImageEditor {
         const animate = (timestamp) => {
             if (!this.frames.length) {
                 cancelAnimationFrame(this.previewAnimationId);
+                this.previewAnimationId = null;
                 return;
             }
 
@@ -1532,10 +1586,10 @@ class ImageEditor {
             const newCorners = this.originalCorners.map(([x, y]) => {
                 let newX = x + deltaX;
                 let newY = y + deltaY;
-                
-                // Ensure coordinates stay within image bounds with padding
-                newX = Math.max(padding, Math.min(newX, this.originalSize[0] - padding));
-                newY = Math.max(padding, Math.min(newY, this.originalSize[1] - padding));
+
+            // Ensure coordinates stay within image bounds with padding
+            newX = Math.max(padding, Math.min(newX, this.originalSize[0] - padding));
+            newY = Math.max(padding, Math.min(newY, this.originalSize[1] - padding));
                 
                 return [newX, newY];
             });
